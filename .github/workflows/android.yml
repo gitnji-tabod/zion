@@ -19,16 +19,16 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v3
-
-      # This automatically sets up and runs Gradle without needing a pre-existing wrapper file in your repo!
-      - name: Setup and Build with Gradle
+      # 🔹 Configures Gradle 8.2 globally on the cloud runner to bypass the missing local wrapper
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          arguments: assembleDebug
-          # If your android project files are inside your 'app' folder, uncomment the next line:
-          # build-root-directory: app
+          gradle-version: '8.2'
+          cache-cleanup: 'always' # Optimized cleanup for pipeline storage
+
+      # 🔹 Runs the build step natively as recommended by the Gradle upgrade guide
+      - name: Build debug APK with Gradle
+        run: gradle assembleDebug
 
       - name: Upload Compiled APK
         if: success()
