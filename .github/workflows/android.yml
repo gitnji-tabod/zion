@@ -21,11 +21,9 @@ jobs:
           cache: 'gradle'
 
       - name: Grant execute permission for gradlew
-        working-directory: zion # 🔹 Fixed: Removed the "./" prefix
         run: chmod +x gradlew
 
       - name: Build debug APK with Gradle
-        working-directory: zion # 🔹 Fixed: Removed the "./" prefix
         run: ./gradlew assembleDebug
 
       - name: Upload Compiled APK
@@ -33,5 +31,4 @@ jobs:
         uses: actions/upload-artifact@v4.6.0
         with:
           name: app-debug-apk
-          # 🔹 Fixed: Verifies the direct path to the compiled APK file
-          path: zion/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
