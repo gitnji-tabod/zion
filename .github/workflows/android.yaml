@@ -1,0 +1,39 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/wrapper-validation-action@v3
+
+      # This automatically sets up and runs Gradle without needing a pre-existing wrapper file in your repo!
+      - name: Setup and Build with Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          arguments: assembleDebug
+          # If your android project files are inside your 'app' folder, uncomment the next line:
+          # build-root-directory: app
+
+      - name: Upload Compiled APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: |
+            **/build/outputs/apk/debug/*-debug.apk
