@@ -21,20 +21,17 @@ jobs:
           cache: 'gradle'
 
       - name: Grant execute permission for gradlew
-        # ⚠️ Replace YOUR_APP_FOLDER_NAME with your actual subfolder name
-        working-directory: ./zion 
+        working-directory: zion # 🔹 Fixed: Removed the "./" prefix
         run: chmod +x gradlew
 
       - name: Build debug APK with Gradle
-        # ⚠️ Replace YOUR_APP_FOLDER_NAME with your actual subfolder name
-        working-directory: ./zion 
+        working-directory: zion # 🔹 Fixed: Removed the "./" prefix
         run: ./gradlew assembleDebug
 
-      # This step uploads your compiled APK so you can download it from GitHub
       - name: Upload Compiled APK
         if: success()
         uses: actions/upload-artifact@v4.6.0
         with:
           name: app-debug-apk
-          # ⚠️ Ensure this path matches where your app builds the APK inside that folder
-          path: ./zion/app/build/outputs/apk/debug/app-debug.apk
+          # 🔹 Fixed: Verifies the direct path to the compiled APK file
+          path: zion/app/build/outputs/apk/debug/app-debug.apk
