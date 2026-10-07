@@ -22,12 +22,12 @@ jobs:
 
       - name: Grant execute permission for gradlew
         # ⚠️ Replace YOUR_APP_FOLDER_NAME with your actual subfolder name
-        working-directory: ./YOUR_APP_FOLDER_NAME 
+        working-directory: ./zion 
         run: chmod +x gradlew
 
       - name: Build debug APK with Gradle
         # ⚠️ Replace YOUR_APP_FOLDER_NAME with your actual subfolder name
-        working-directory: ./YOUR_APP_FOLDER_NAME 
+        working-directory: ./zion 
         run: ./gradlew assembleDebug
 
       # This step uploads your compiled APK so you can download it from GitHub
