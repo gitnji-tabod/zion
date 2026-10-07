@@ -19,20 +19,21 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # 🔹 Bypasses the corrupted local cache handshake by setting cache-disabled to true
+      # Configures a clean environment and forces validation to clear corrupted dependencies
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2'
-          cache-disabled: true # 🌟 Temporary fix: Forces an uncorrupted clean download
+          cache-disabled: true # Keeps the cloud workspace sterile to clear the bcprov jar error
 
+      # Runs the build while handling the project name spacing natively
       - name: Build debug APK with Gradle
-        run: gradle assembleDebug
+        run: gradle assembleDebug --no-daemon --stacktrace
 
+      # Safely locates and uploads your APK regardless of your subfolder layout
       - name: Upload Compiled APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: |
-            **/build/outputs/apk/debug/*-debug.apk
+          path: "**/build/outputs/apk/debug/*-debug.apk"
