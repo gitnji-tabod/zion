@@ -19,14 +19,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # 🔹 Configures Gradle 8.2 globally on the cloud runner to bypass the missing local wrapper
+      # 🔹 Bypasses the corrupted local cache handshake by setting cache-disabled to true
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2'
-          cache-cleanup: 'always' # Optimized cleanup for pipeline storage
+          cache-disabled: true # 🌟 Temporary fix: Forces an uncorrupted clean download
 
-      # 🔹 Runs the build step natively as recommended by the Gradle upgrade guide
       - name: Build debug APK with Gradle
         run: gradle assembleDebug
 
