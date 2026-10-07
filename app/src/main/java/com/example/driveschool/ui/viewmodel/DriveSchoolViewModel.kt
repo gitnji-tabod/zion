@@ -1,8 +1,13 @@
 package com.example.driveschool.ui.viewmodel
 
+import android.app.Activity
 import android.app.Application
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.R
 import com.example.driveschool.data.db.DriveSchoolDatabase
 import com.example.driveschool.data.db.populateInitialDatabase
 import com.example.driveschool.data.db.resetToProductionSeedData
@@ -14,7 +19,13 @@ import com.example.driveschool.data.sync.SyncState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 
 class DriveSchoolViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -29,7 +40,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
   val currentRole: StateFlow<UserRole> = _currentRole.asStateFlow()
 
   private val _activeUserOverride = MutableStateFlow<UserEntity?>(null)
-  private val _authScreen = MutableStateFlow("MAIN_APP") // "SIGN_IN", "SIGN_UP", "MAIN_APP"
+  private val _authScreen = MutableStateFlow("SIGN_IN") // "SIGN_IN", "SIGN_UP", "MAIN_APP"
   val authScreen: StateFlow<String> = _authScreen.asStateFlow()
 
   private val _currentLocale = MutableStateFlow("en") // "en" or "fr"
@@ -153,24 +164,72 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
 
   fun signIn(emailOrPhone: String, password: String) {
     viewModelScope.launch {
-      val userList = users.value
       val cleanInput = emailOrPhone.trim()
-      val matched = userList.find {
-        it.email.equals(cleanInput, ignoreCase = true) ||
-        it.phone.replace(" ", "").contains(cleanInput.replace(" ", ""))
+      try {
+        require(cleanInput.contains("@")) { "Use your email address to sign in." }
+        val result = FirebaseAuth.getInstance()
+          .signInWithEmailAndPassword(cleanInput, password)
+          .await()
+        val matched = users.value.firstOrNull {
+          it.email.equals(result.user?.email ?: cleanInput, ignoreCase = true)
+        }
+        if (matched == null) {
+          FirebaseAuth.getInstance().signOut()
+          showMessage("Your Firebase account has no ZION digital profile yet.")
+        } else {
+          _activeUserOverride.value = matched
+          _currentRole.value = matched.role
+          _authScreen.value = "MAIN_APP"
+          showMessage("Welcome back, ${matched.name}!")
+        }
+      } catch (e: Exception) {
+        showMessage(e.message ?: "Sign-in failed.")
       }
-      if (matched != null) {
-        _activeUserOverride.value = matched
-        _currentRole.value = matched.role
-        _authScreen.value = "MAIN_APP"
-        showMessage("Welcome back, ${matched.name}!")
-      } else {
-        // Fallback: log in as student
-        val student = userList.find { it.role == UserRole.STUDENT } ?: userList.first()
-        _activeUserOverride.value = student
-        _currentRole.value = student.role
-        _authScreen.value = "MAIN_APP"
-        showMessage("Signed in as ${student.name}")
+    }
+  }
+
+  fun signInWithGoogle(activity: Activity) {
+    viewModelScope.launch {
+      try {
+        val webClientId = activity.getString(R.string.google_web_client_id)
+        require(webClientId.isNotBlank() && !webClientId.startsWith("REPLACE_")) {
+          "Google sign-in is not configured. Add the Firebase web client ID to google-services.json."
+        }
+
+        val googleIdOption = GetGoogleIdOption.Builder()
+          .setServerClientId(webClientId)
+          .setFilterByAuthorizedAccounts(false)
+          .setAutoSelectEnabled(false)
+          .build()
+        val request = GetCredentialRequest.Builder()
+          .addCredentialOption(googleIdOption)
+          .build()
+        val credential = CredentialManager.create(activity).getCredential(activity, request).credential
+        require(credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+          "Google credential was not returned."
+        }
+
+        val googleCredential = try {
+          GoogleIdTokenCredential.createFrom(credential.data)
+        } catch (e: GoogleIdTokenParsingException) {
+          throw IllegalStateException("Google sign-in returned an invalid token.", e)
+        }
+        val firebaseCredential = GoogleAuthProvider.getCredential(googleCredential.idToken, null)
+        val firebaseUser = FirebaseAuth.getInstance().signInWithCredential(firebaseCredential).await().user
+          ?: error("Firebase did not return a signed-in user.")
+        val matched = users.value.firstOrNull { it.email.equals(firebaseUser.email, ignoreCase = true) }
+
+        if (matched == null) {
+          FirebaseAuth.getInstance().signOut()
+          showMessage("This Google account is not registered in ZION digital.")
+        } else {
+          _activeUserOverride.value = matched
+          _currentRole.value = matched.role
+          _authScreen.value = "MAIN_APP"
+          showMessage("Welcome back, ${matched.name}!")
+        }
+      } catch (e: Exception) {
+        showMessage(e.message ?: "Google sign-in failed.")
       }
     }
   }
@@ -183,6 +242,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
   }
 
   fun signOut() {
+    FirebaseAuth.getInstance().signOut()
     _activeUserOverride.value = null
     _authScreen.value = "SIGN_IN"
     showMessage("Signed out successfully.")
@@ -211,6 +271,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
   fun signUpStudent(
     name: String,
     email: String,
+    password: String,
     phone: String,
     countryCode: String,
     branchId: String?,
@@ -218,31 +279,49 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
     mode: EnrollmentMode
   ) {
     viewModelScope.launch(Dispatchers.IO) {
-      val newStudent = repository.registerStudent(
-        name = name,
-        email = email,
-        phone = phone,
-        countryCode = countryCode,
-        selectedBranchId = branchId,
-        preferredLocale = _currentLocale.value,
-        actorId = "self-signup",
-        actorRole = "STUDENT"
-      )
+      var firebaseUserCreated = false
+      try {
+        require(password.length >= 6) { "Password must contain at least 6 characters." }
+        val authResult = FirebaseAuth.getInstance()
+          .createUserWithEmailAndPassword(email.trim(), password)
+          .await()
+        firebaseUserCreated = true
 
-      repository.createEnrollment(
-        student = newStudent,
-        courseId = courseId,
-        mode = mode
-      )
+        val newStudent = repository.registerStudent(
+          name = name,
+          email = email,
+          phone = phone,
+          countryCode = countryCode,
+          selectedBranchId = branchId,
+          preferredLocale = _currentLocale.value,
+          actorId = authResult.user?.uid ?: "self-signup",
+          actorRole = "STUDENT"
+        )
 
-      // Persist student to Firestore 'users' collection immediately
-      syncManager.pushUser(newStudent)
+        repository.createEnrollment(
+          student = newStudent,
+          courseId = courseId,
+          mode = mode
+        )
 
-      withContext(Dispatchers.Main) {
-        _activeUserOverride.value = newStudent
-        _currentRole.value = UserRole.STUDENT
-        _authScreen.value = "MAIN_APP"
-        showMessage("Account created! Free onboarding lessons unlocked (BR-02).")
+        val syncResult = syncManager.syncAll()
+        withContext(Dispatchers.Main) {
+          _activeUserOverride.value = newStudent
+          _currentRole.value = UserRole.STUDENT
+          _authScreen.value = "MAIN_APP"
+          when (syncResult) {
+            is SyncState.Success -> showMessage("Account created and synced to Firebase.")
+            is SyncState.Error -> showMessage("Account created locally, but Firebase sync failed: ${syncResult.error}")
+            else -> showMessage("Account created locally. Firebase sync is pending.")
+          }
+        }
+      } catch (e: Exception) {
+        if (firebaseUserCreated) {
+          FirebaseAuth.getInstance().currentUser?.delete()?.await()
+        }
+        withContext(Dispatchers.Main) {
+          showMessage(e.message ?: "Account creation failed.")
+        }
       }
     }
   }

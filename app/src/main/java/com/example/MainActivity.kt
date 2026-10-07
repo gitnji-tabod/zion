@@ -89,6 +89,7 @@ fun DriveSchoolApp(
       users = users,
       branches = branches,
       onSignIn = { email, pass -> viewModel.signIn(email, pass) },
+      onGoogleSignIn = { viewModel.signInWithGoogle(this@MainActivity) },
       onQuickSignInUser = { user -> viewModel.quickSignInUser(user) },
       onNavigateToSignUp = { viewModel.navigateToAuth("SIGN_UP") }
     )
@@ -98,8 +99,8 @@ fun DriveSchoolApp(
       currentLocale = currentLocale,
       branches = branches,
       courses = courses,
-      onSignUp = { name, email, phone, country, branchId, courseId, mode ->
-        viewModel.signUpStudent(name, email, phone, country, branchId, courseId, mode)
+      onSignUp = { name, email, password, phone, country, branchId, courseId, mode ->
+        viewModel.signUpStudent(name, email, password, phone, country, branchId, courseId, mode)
       },
       onNavigateToSignIn = { viewModel.navigateToAuth("SIGN_IN") }
     )

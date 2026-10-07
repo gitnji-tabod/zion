@@ -6,6 +6,7 @@ import com.example.R
 import com.example.driveschool.data.db.DriveSchoolDao
 import com.example.driveschool.data.model.*
 import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
@@ -76,6 +77,11 @@ class DriveSchoolSyncManager(
    */
   suspend fun syncAll(): SyncState = withContext(Dispatchers.IO) {
     _syncState.value = SyncState.Syncing
+    if (FirebaseAuth.getInstance().currentUser == null) {
+      val errorState = SyncState.Error("Firebase authentication is required before syncing data.")
+      _syncState.value = errorState
+      return@withContext errorState
+    }
     val firestore = getFirestore()
 
     if (firestore == null) {

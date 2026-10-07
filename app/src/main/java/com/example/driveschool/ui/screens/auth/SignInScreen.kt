@@ -36,6 +36,7 @@ fun SignInScreen(
   users: List<UserEntity>,
   branches: List<BranchEntity> = emptyList(),
   onSignIn: (String, String) -> Unit,
+  onGoogleSignIn: () -> Unit,
   onQuickSignInUser: (UserEntity) -> Unit,
   onNavigateToSignUp: () -> Unit
 ) {
@@ -158,10 +159,7 @@ fun SignInScreen(
 
         // Google Sign-In Button (Firebase Auth integration)
         OutlinedButton(
-          onClick = {
-            val defaultStudent = users.find { it.role == UserRole.STUDENT } ?: users.first()
-            onQuickSignInUser(defaultStudent)
-          },
+          onClick = onGoogleSignIn,
           shape = RoundedCornerShape(10.dp),
           modifier = Modifier
             .fillMaxWidth()

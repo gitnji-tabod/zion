@@ -35,7 +35,7 @@ fun SignUpScreen(
   currentLocale: String,
   branches: List<BranchEntity>,
   courses: List<CourseEntity>,
-  onSignUp: (String, String, String, String, String?, String, EnrollmentMode) -> Unit,
+  onSignUp: (String, String, String, String, String, String?, String, EnrollmentMode) -> Unit,
   onNavigateToSignIn: () -> Unit
 ) {
   var name by remember { mutableStateOf("") }
@@ -281,6 +281,7 @@ fun SignUpScreen(
                 onSignUp(
                   name,
                   email,
+                  password,
                   phone,
                   countryCode,
                   assignedBranch,
