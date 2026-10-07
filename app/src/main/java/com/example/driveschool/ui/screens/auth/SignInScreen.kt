@@ -206,8 +206,8 @@ fun SignInScreen(
 
     Spacer(modifier = Modifier.height(20.dp))
 
-    // Quick Switch Demo Persona Section
-    Surface(
+    // Keep persona switching available only when multiple real users exist.
+    if (users.size > 1) Surface(
       shape = RoundedCornerShape(14.dp),
       color = Color(0xFFF1F5F9),
       modifier = Modifier.fillMaxWidth()

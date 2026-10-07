@@ -45,7 +45,7 @@ fun SignUpScreen(
   var countryCode by remember { mutableStateOf("CM") } // "CM" for Cameroon, others for International
   val physicalBranches = remember(branches) { branches.filter { !it.isVirtual } }
   var selectedBranchId by remember(physicalBranches) { mutableStateOf(physicalBranches.firstOrNull()?.id ?: "") }
-  var selectedCourseId by remember(courses) { mutableStateOf(courses.firstOrNull()?.id ?: "course-cat-b") }
+  var selectedCourseId by remember(courses) { mutableStateOf(courses.firstOrNull()?.id ?: "") }
   var mode by remember { mutableStateOf(EnrollmentMode.ONSITE) }
   var branchMenuExpanded by remember { mutableStateOf(false) }
 
@@ -277,7 +277,7 @@ fun SignUpScreen(
           Button(
             onClick = {
               if (name.isNotBlank() && email.isNotBlank()) {
-                val assignedBranch = if (countryCode == "CM") selectedBranchId else "branch-online-00"
+                val assignedBranch = if (countryCode == "CM") selectedBranchId.ifBlank { null } else null
                 onSignUp(
                   name,
                   email,

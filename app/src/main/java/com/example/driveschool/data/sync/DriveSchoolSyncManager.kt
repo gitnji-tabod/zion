@@ -8,12 +8,16 @@ import com.example.driveschool.data.model.*
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
@@ -70,6 +74,138 @@ class DriveSchoolSyncManager(
     }
   }
 
+  private val listenerRegistrations = mutableListOf<ListenerRegistration>()
+
+  suspend fun pullAllFromFirestore(): SyncState = withContext(Dispatchers.IO) {
+    val firestore = authenticatedFirestore() ?: return@withContext SyncState.Error("Firebase authentication is required before downloading data.")
+    try {
+      pullCollection(firestore, "users", UserEntity::class.java) { dao.clearUsers(); it.forEach(dao::insertUser) }
+      pullCollection(firestore, "branches", BranchEntity::class.java) { dao.clearBranches(); dao.insertBranches(it) }
+      pullCollection(firestore, "courses", CourseEntity::class.java) { dao.clearCourses(); dao.insertCourses(it) }
+      pullCollection(firestore, "fee_schedules", FeeScheduleEntity::class.java) { dao.clearFeeSchedules(); dao.insertFeeSchedules(it) }
+      pullCollection(firestore, "enrollments", EnrollmentEntity::class.java) { dao.clearEnrollments(); it.forEach(dao::insertEnrollment) }
+      pullCollection(firestore, "lessons", LessonEntity::class.java) { dao.clearLessons(); dao.insertLessons(it) }
+      pullCollection(firestore, "lesson_progress", LessonProgressEntity::class.java) { dao.clearLessonProgress(); it.forEach(dao::insertProgress) }
+      pullCollection(firestore, "payments", PaymentEntity::class.java) { dao.clearPayments(); it.forEach(dao::insertPayment) }
+      pullCollection(firestore, "practical_sessions", PracticalSessionEntity::class.java) { dao.clearPracticalSessions(); it.forEach(dao::insertPracticalSession) }
+      pullCollection(firestore, "vehicles", VehicleEntity::class.java) { dao.clearVehicles(); dao.insertVehicles(it) }
+      pullCollection(firestore, "exam_sessions", ExamSessionEntity::class.java) { dao.clearExamSessions(); dao.insertExamSessions(it) }
+      pullCollection(firestore, "exam_candidates", ExamCandidateEntity::class.java) { dao.clearCandidates(); it.forEach(dao::insertCandidate) }
+      pullCollection(firestore, "certificates", CertificateEntity::class.java) { dao.clearCertificates(); it.forEach(dao::insertCertificate) }
+      pullCollection(firestore, "insurance_policies", InsurancePolicyEntity::class.java) { dao.clearInsurancePolicies(); dao.insertInsurancePolicies(it) }
+      pullCollection(firestore, "audit_logs", AuditLogEntity::class.java) { dao.clearAuditLogs(); it.forEach(dao::insertAuditLog) }
+      pullCollection(firestore, "expiry_alerts", ExpiryAlertEntity::class.java) { dao.clearExpiryAlerts(); dao.insertExpiryAlerts(it) }
+      val state = SyncState.Success(0, "Downloaded the latest shared data from Firestore.")
+      _syncState.value = state
+      state
+    } catch (e: Exception) {
+      val state = SyncState.Error("Download failed: ${e.message ?: "Network error"}")
+      _syncState.value = state
+      state
+    }
+  }
+
+  fun startRealtimeListeners(scope: CoroutineScope) {
+    stopRealtimeListeners()
+    val firestore = authenticatedFirestore() ?: return
+    listenCollection(firestore, "users", UserEntity::class.java, scope) { dao.clearUsers(); it.forEach(dao::insertUser) }
+    listenCollection(firestore, "branches", BranchEntity::class.java, scope) { dao.clearBranches(); dao.insertBranches(it) }
+    listenCollection(firestore, "courses", CourseEntity::class.java, scope) { dao.clearCourses(); dao.insertCourses(it) }
+    listenCollection(firestore, "fee_schedules", FeeScheduleEntity::class.java, scope) { dao.clearFeeSchedules(); dao.insertFeeSchedules(it) }
+    listenCollection(firestore, "enrollments", EnrollmentEntity::class.java, scope) { dao.clearEnrollments(); it.forEach(dao::insertEnrollment) }
+    listenCollection(firestore, "lessons", LessonEntity::class.java, scope) { dao.clearLessons(); dao.insertLessons(it) }
+    listenCollection(firestore, "lesson_progress", LessonProgressEntity::class.java, scope) { dao.clearLessonProgress(); it.forEach(dao::insertProgress) }
+    listenCollection(firestore, "payments", PaymentEntity::class.java, scope) { dao.clearPayments(); it.forEach(dao::insertPayment) }
+    listenCollection(firestore, "practical_sessions", PracticalSessionEntity::class.java, scope) { dao.clearPracticalSessions(); it.forEach(dao::insertPracticalSession) }
+    listenCollection(firestore, "vehicles", VehicleEntity::class.java, scope) { dao.clearVehicles(); dao.insertVehicles(it) }
+    listenCollection(firestore, "exam_sessions", ExamSessionEntity::class.java, scope) { dao.clearExamSessions(); dao.insertExamSessions(it) }
+    listenCollection(firestore, "exam_candidates", ExamCandidateEntity::class.java, scope) { dao.clearCandidates(); it.forEach(dao::insertCandidate) }
+    listenCollection(firestore, "certificates", CertificateEntity::class.java, scope) { dao.clearCertificates(); it.forEach(dao::insertCertificate) }
+    listenCollection(firestore, "insurance_policies", InsurancePolicyEntity::class.java, scope) { dao.clearInsurancePolicies(); dao.insertInsurancePolicies(it) }
+    listenCollection(firestore, "audit_logs", AuditLogEntity::class.java, scope) { dao.clearAuditLogs(); it.forEach(dao::insertAuditLog) }
+    listenCollection(firestore, "expiry_alerts", ExpiryAlertEntity::class.java, scope) { dao.clearExpiryAlerts(); dao.insertExpiryAlerts(it) }
+  }
+
+  fun stopRealtimeListeners() {
+    listenerRegistrations.forEach { it.remove() }
+    listenerRegistrations.clear()
+  }
+
+  private fun authenticatedFirestore(): FirebaseFirestore? {
+    if (FirebaseAuth.getInstance().currentUser == null) return null
+    return getFirestore()
+  }
+
+  private suspend fun writeDocument(
+    firestore: FirebaseFirestore,
+    collection: String,
+    documentId: String,
+    data: Map<String, Any?>
+  ) {
+    retry("write $collection/$documentId") {
+      firestore.collection(collection).document(documentId).set(
+        data + mapOf(
+          "serverUpdatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+          "updatedBy" to FirebaseAuth.getInstance().currentUser?.uid
+        ),
+        SetOptions.merge()
+      ).await()
+    }
+  }
+
+  private suspend fun deleteDocument(
+    firestore: FirebaseFirestore,
+    collection: String,
+    documentId: String
+  ) {
+    retry("delete $collection/$documentId") {
+      firestore.collection(collection).document(documentId).delete().await()
+    }
+  }
+
+  private suspend fun <T> retry(operation: String, action: suspend () -> T): T {
+    var lastError: Exception? = null
+    repeat(3) { attempt ->
+      try {
+        return action()
+      } catch (e: Exception) {
+        lastError = e
+        Log.w(TAG, "$operation failed on attempt ${attempt + 1}: ${e.message}")
+        if (attempt < 2) delay(500L * (attempt + 1))
+      }
+    }
+    throw lastError ?: IllegalStateException("$operation failed")
+  }
+
+  private suspend fun <T : Any> pullCollection(
+    firestore: FirebaseFirestore,
+    collection: String,
+    type: Class<T>,
+    replace: suspend (List<T>) -> Unit
+  ) {
+    val values = firestore.collection(collection).get().await().documents.mapNotNull { it.toObject(type) }
+    replace(values)
+  }
+
+  private fun <T : Any> listenCollection(
+    firestore: FirebaseFirestore,
+    collection: String,
+    type: Class<T>,
+    scope: CoroutineScope,
+    replace: suspend (List<T>) -> Unit
+  ) {
+    val registration = firestore.collection(collection).addSnapshotListener { snapshot, error ->
+      if (error != null) {
+        Log.w(TAG, "Realtime listener failed for $collection: ${error.message}")
+      } else if (snapshot != null) {
+        scope.launch(Dispatchers.IO) {
+          replace(snapshot.documents.mapNotNull { it.toObject(type) })
+        }
+      }
+    }
+    listenerRegistrations += registration
+  }
+
   /**
    * Synchronize all local Room tables with cloud Firestore.
    * Supports offline tolerance for Cameroonian branches: if offline, records remain in Room
@@ -117,7 +253,7 @@ class DriveSchoolSyncManager(
           "secretaryPhone" to (secretary?.phone ?: ""),
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("branches").document(b.id).set(data, SetOptions.merge()).await()
+        writeDocument(firestore, "branches", b.id, data)
         syncedItems++
       }
 
@@ -134,7 +270,7 @@ class DriveSchoolSyncManager(
           "preferredLocale" to u.preferredLocale,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("users").document(u.id).set(data, SetOptions.merge()).await()
+        writeDocument(firestore, "users", u.id, data)
         syncedItems++
       }
 
@@ -156,7 +292,7 @@ class DriveSchoolSyncManager(
           "termEndsAt" to e.termEndsAt,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("enrollments").document(e.id).set(data, SetOptions.merge()).await()
+        writeDocument(firestore, "enrollments", e.id, data)
         syncedItems++
       }
 
@@ -176,7 +312,7 @@ class DriveSchoolSyncManager(
           "notes" to p.notes,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("payments").document(p.id).set(data, SetOptions.merge()).await()
+        writeDocument(firestore, "payments", p.id, data)
         syncedItems++
       }
 
@@ -197,7 +333,7 @@ class DriveSchoolSyncManager(
           "instructorFeedback" to s.instructorFeedback,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("practical_sessions").document(s.id).set(data, SetOptions.merge()).await()
+        writeDocument(firestore, "practical_sessions", s.id, data)
         syncedItems++
       }
 
@@ -215,7 +351,7 @@ class DriveSchoolSyncManager(
           "status" to v.status.name,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("vehicles").document(v.id).set(data, SetOptions.merge()).await()
+        writeDocument(firestore, "vehicles", v.id, data)
         syncedItems++
       }
 
@@ -235,7 +371,7 @@ class DriveSchoolSyncManager(
           "qrPayload" to c.qrPayload,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("certificates").document(c.verificationUuid).set(data, SetOptions.merge()).await()
+        writeDocument(firestore, "certificates", c.verificationUuid, data)
         syncedItems++
       }
 
@@ -256,7 +392,7 @@ class DriveSchoolSyncManager(
           "status" to pol.status,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("insurance_policies").document(pol.id).set(data, SetOptions.merge()).await()
+        writeDocument(firestore, "insurance_policies", pol.id, data)
         syncedItems++
       }
 
@@ -291,7 +427,7 @@ class DriveSchoolSyncManager(
         "notes" to payment.notes,
         "syncedAt" to System.currentTimeMillis()
       )
-      firestore.collection("payments").document(payment.id).set(data, SetOptions.merge()).await()
+      writeDocument(firestore, "payments", payment.id, data)
     } catch (e: Exception) {
       Log.w(TAG, "Failed to push payment ${payment.id} to Firestore: ${e.message}")
     }
@@ -328,7 +464,7 @@ class DriveSchoolSyncManager(
         "secretaryPhone" to (secretary?.phone ?: ""),
         "syncedAt" to System.currentTimeMillis()
       )
-      firestore.collection("branches").document(branch.id).set(branchData, SetOptions.merge()).await()
+      writeDocument(firestore, "branches", branch.id, branchData)
 
       // Also persist manager & secretary to users collection if provided
       manager?.let { m ->
@@ -343,7 +479,7 @@ class DriveSchoolSyncManager(
           "preferredLocale" to m.preferredLocale,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("users").document(m.id).set(mgrData, SetOptions.merge()).await()
+        writeDocument(firestore, "users", m.id, mgrData)
       }
 
       secretary?.let { s ->
@@ -358,7 +494,7 @@ class DriveSchoolSyncManager(
           "preferredLocale" to s.preferredLocale,
           "syncedAt" to System.currentTimeMillis()
         )
-        firestore.collection("users").document(s.id).set(secData, SetOptions.merge()).await()
+        writeDocument(firestore, "users", s.id, secData)
       }
 
       _lastSyncTimestamp.value = System.currentTimeMillis()
@@ -377,7 +513,7 @@ class DriveSchoolSyncManager(
   suspend fun deleteBranchFromFirestore(branchId: String) = withContext(Dispatchers.IO) {
     val firestore = getFirestore() ?: return@withContext
     try {
-      firestore.collection("branches").document(branchId).delete().await()
+      deleteDocument(firestore, "branches", branchId)
     } catch (e: Exception) {
       Log.w(TAG, "Error deleting branch from Firestore: ${e.message}")
     }
@@ -400,7 +536,7 @@ class DriveSchoolSyncManager(
         "preferredLocale" to user.preferredLocale,
         "syncedAt" to System.currentTimeMillis()
       )
-      firestore.collection("users").document(user.id).set(data, SetOptions.merge()).await()
+      writeDocument(firestore, "users", user.id, data)
       true
     } catch (e: Exception) {
       Log.w(TAG, "Error pushing user ${user.id} to Firestore: ${e.message}")
@@ -414,7 +550,7 @@ class DriveSchoolSyncManager(
   suspend fun deleteUserFromFirestore(userId: String) = withContext(Dispatchers.IO) {
     val firestore = getFirestore() ?: return@withContext
     try {
-      firestore.collection("users").document(userId).delete().await()
+      deleteDocument(firestore, "users", userId)
     } catch (e: Exception) {
       Log.w(TAG, "Error deleting user from Firestore: ${e.message}")
     }
@@ -439,7 +575,7 @@ class DriveSchoolSyncManager(
         "qrPayload" to cert.qrPayload,
         "syncedAt" to System.currentTimeMillis()
       )
-      firestore.collection("certificates").document(cert.verificationUuid).set(data, SetOptions.merge()).await()
+      writeDocument(firestore, "certificates", cert.verificationUuid, data)
     } catch (e: Exception) {
       Log.w(TAG, "Failed to push certificate ${cert.verificationUuid} to Firestore: ${e.message}")
     }

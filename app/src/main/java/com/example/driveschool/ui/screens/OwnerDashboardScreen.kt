@@ -41,7 +41,6 @@ fun OwnerDashboardScreen(
   courses: List<CourseEntity> = emptyList(),
   onRunDailyScan: () -> Unit,
   onNavigateTab: (String) -> Unit,
-  onResetSeedData: () -> Unit = {},
   onCloudSync: () -> Unit = {},
   onCreateBranch: (
     name: String,
@@ -226,27 +225,6 @@ fun OwnerDashboardScreen(
             )
           }
 
-          Spacer(modifier = Modifier.height(8.dp))
-
-          // Reload / Reset Production Seed Data Button
-          OutlinedButton(
-            onClick = onResetSeedData,
-            colors = ButtonDefaults.outlinedButtonColors(
-              contentColor = Color(0xFF94A3B8)
-            ),
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("reset_production_seed_data_button")
-          ) {
-            Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-              text = if (currentLocale == "fr") "Réinitialiser Données Initiales de Production (5 Agences)" else "Reload Production Seed Data (5 Branches)",
-              fontSize = 12.sp,
-              fontWeight = FontWeight.SemiBold
-            )
-          }
         }
       }
     }

@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.driveschool.data.db.DriveSchoolSeedData
 import com.example.driveschool.data.model.*
 import com.example.driveschool.ui.components.AppTopBar
 import com.example.driveschool.ui.components.PaymentGatewayModal
@@ -426,7 +425,6 @@ fun DriveSchoolApp(
             courses = courses,
             onRunDailyScan = { viewModel.runDailyExpiryScan() },
             onNavigateTab = { tab -> viewModel.selectTab(tab) },
-            onResetSeedData = { viewModel.resetProductionSeedData() },
             onCloudSync = { viewModel.triggerCloudSync() },
             onCreateBranch = { bName, city, addr, phone, mName, mEmail, mPhone, sName, sEmail, sPhone, stName, stEmail, stPhone, cId ->
               viewModel.createBranch(bName, city, addr, phone, mName, mEmail, mPhone, sName, sEmail, sPhone, stName, stEmail, stPhone, cId)
@@ -496,7 +494,7 @@ fun DriveSchoolApp(
         }
 
         currentRole == UserRole.STUDENT -> {
-          val activeLessons = DriveSchoolSeedData.lessons
+          val activeLessons = emptyList<LessonEntity>()
 
           StudentHomeScreen(
             currentLocale = currentLocale,

@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
     AuditLogEntity::class,
     ExpiryAlertEntity::class
   ],
-  version = 1,
+  version = 2,
   exportSchema = false
 )
 @TypeConverters(DriveSchoolConverters::class)
@@ -73,44 +73,8 @@ abstract class DriveSchoolDatabase : RoomDatabase() {
 }
 
 suspend fun populateInitialDatabase(dao: DriveSchoolDao) {
-  // Seed branches
-  dao.insertBranches(DriveSchoolSeedData.branches)
-  // Seed users
-  DriveSchoolSeedData.users.forEach { dao.insertUser(it) }
-  // Seed courses
-  dao.insertCourses(DriveSchoolSeedData.courses)
-  // Seed fee schedules
-  dao.insertFeeSchedules(DriveSchoolSeedData.feeSchedules)
-  // Seed lessons
-  dao.insertLessons(DriveSchoolSeedData.lessons)
-  // Seed vehicles
-  dao.insertVehicles(DriveSchoolSeedData.vehicles)
-  // Seed enrollments
-  dao.insertEnrollment(DriveSchoolSeedData.enrollmentOnsiteBrenda)
-  dao.insertEnrollment(DriveSchoolSeedData.enrollmentOnlineThomas)
-  dao.insertEnrollment(DriveSchoolSeedData.enrollmentPendingDiscount)
-  dao.insertEnrollment(DriveSchoolSeedData.enrollmentLucasTruck)
-  dao.insertEnrollment(DriveSchoolSeedData.enrollmentYaounde)
-  dao.insertEnrollment(DriveSchoolSeedData.enrollmentBafoussam)
-  dao.insertEnrollment(DriveSchoolSeedData.enrollmentGaroua)
-  // Seed exam sessions and candidates
-  dao.insertExamSessions(listOf(DriveSchoolSeedData.examSessionBamenda, DriveSchoolSeedData.examSessionDouala))
-  dao.insertCandidate(DriveSchoolSeedData.candidate1)
-  dao.insertCandidate(DriveSchoolSeedData.candidate2)
-  dao.insertCandidate(DriveSchoolSeedData.candidate3)
-  dao.insertCandidate(DriveSchoolSeedData.candidatePassedBrenda)
-  // Seed certificate
-  dao.insertCertificate(DriveSchoolSeedData.certificateBrenda)
-  // Seed insurance policies
-  dao.insertInsurancePolicies(DriveSchoolSeedData.insurancePolicies)
-  // Seed alerts
-  dao.insertExpiryAlerts(DriveSchoolSeedData.expiryAlerts)
-  // Seed audit logs
-  DriveSchoolSeedData.auditLogs.forEach { dao.insertAuditLog(it) }
-  // Seed payments
-  DriveSchoolSeedData.payments.forEach { dao.insertPayment(it) }
-  // Seed practical sessions
-  DriveSchoolSeedData.practicalSessions.forEach { dao.insertPracticalSession(it) }
+  // Production starts with only the initial administrator. All other records are created by users.
+  dao.insertUser(ProductionSeedData.admin)
 }
 
 suspend fun resetToProductionSeedData(dao: DriveSchoolDao) {

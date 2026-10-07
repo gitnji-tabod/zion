@@ -104,6 +104,9 @@ interface DriveSchoolDao {
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertProgress(progress: LessonProgressEntity)
 
+  @Query("DELETE FROM lesson_progress")
+  suspend fun clearLessonProgress()
+
   // Payments
   @Query("SELECT * FROM payments ORDER BY createdAt DESC")
   fun getAllPayments(): Flow<List<PaymentEntity>>

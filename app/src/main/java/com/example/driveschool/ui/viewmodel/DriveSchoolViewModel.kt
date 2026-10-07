@@ -9,8 +9,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.R
 import com.example.driveschool.data.db.DriveSchoolDatabase
+import com.example.driveschool.data.db.ProductionSeedData
 import com.example.driveschool.data.db.populateInitialDatabase
-import com.example.driveschool.data.db.resetToProductionSeedData
 import com.example.driveschool.data.model.*
 import com.example.driveschool.data.repository.DriveSchoolRepository
 import com.example.driveschool.data.sync.DriveSchoolSyncManager
@@ -36,7 +36,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
   val lastSyncTimestamp = syncManager.lastSyncTimestamp
 
   // Current session & role state
-  private val _currentRole = MutableStateFlow(UserRole.SUPER_ADMIN)
+  private val _currentRole = MutableStateFlow(UserRole.STUDENT)
   val currentRole: StateFlow<UserRole> = _currentRole.asStateFlow()
 
   private val _activeUserOverride = MutableStateFlow<UserEntity?>(null)
@@ -170,7 +170,18 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
         val result = FirebaseAuth.getInstance()
           .signInWithEmailAndPassword(cleanInput, password)
           .await()
-        val matched = users.value.firstOrNull {
+        val downloadResult = syncManager.pullAllFromFirestore()
+        if (downloadResult is SyncState.Error) {
+          showMessage(downloadResult.error)
+          return@launch
+        }
+        var syncedUsers = database.driveSchoolDao().getAllUsers().first()
+        if (syncedUsers.isEmpty() && cleanInput.equals(ProductionSeedData.admin.email, ignoreCase = true)) {
+          database.driveSchoolDao().insertUser(ProductionSeedData.admin)
+          syncManager.pushUser(ProductionSeedData.admin)
+          syncedUsers = listOf(ProductionSeedData.admin)
+        }
+        val matched = syncedUsers.firstOrNull {
           it.email.equals(result.user?.email ?: cleanInput, ignoreCase = true)
         }
         if (matched == null) {
@@ -180,6 +191,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
           _activeUserOverride.value = matched
           _currentRole.value = matched.role
           _authScreen.value = "MAIN_APP"
+          syncManager.startRealtimeListeners(viewModelScope)
           showMessage("Welcome back, ${matched.name}!")
         }
       } catch (e: Exception) {
@@ -217,7 +229,12 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
         val firebaseCredential = GoogleAuthProvider.getCredential(googleCredential.idToken, null)
         val firebaseUser = FirebaseAuth.getInstance().signInWithCredential(firebaseCredential).await().user
           ?: error("Firebase did not return a signed-in user.")
-        val matched = users.value.firstOrNull { it.email.equals(firebaseUser.email, ignoreCase = true) }
+        val downloadResult = syncManager.pullAllFromFirestore()
+        if (downloadResult is SyncState.Error) {
+          showMessage(downloadResult.error)
+          return@launch
+        }
+        val matched = database.driveSchoolDao().getAllUsers().firstOrNull { it.email.equals(firebaseUser.email, ignoreCase = true) }
 
         if (matched == null) {
           FirebaseAuth.getInstance().signOut()
@@ -226,6 +243,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
           _activeUserOverride.value = matched
           _currentRole.value = matched.role
           _authScreen.value = "MAIN_APP"
+          syncManager.startRealtimeListeners(viewModelScope)
           showMessage("Welcome back, ${matched.name}!")
         }
       } catch (e: Exception) {
@@ -242,6 +260,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
   }
 
   fun signOut() {
+    syncManager.stopRealtimeListeners()
     FirebaseAuth.getInstance().signOut()
     _activeUserOverride.value = null
     _authScreen.value = "SIGN_IN"
@@ -298,17 +317,20 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
           actorRole = "STUDENT"
         )
 
-        repository.createEnrollment(
-          student = newStudent,
-          courseId = courseId,
-          mode = mode
-        )
+        if (courseId.isNotBlank()) {
+          repository.createEnrollment(
+            student = newStudent,
+            courseId = courseId,
+            mode = mode
+          )
+        }
 
         val syncResult = syncManager.syncAll()
         withContext(Dispatchers.Main) {
           _activeUserOverride.value = newStudent
           _currentRole.value = UserRole.STUDENT
           _authScreen.value = "MAIN_APP"
+          syncManager.startRealtimeListeners(viewModelScope)
           when (syncResult) {
             is SyncState.Success -> showMessage("Account created and synced to Firebase.")
             is SyncState.Error -> showMessage("Account created locally, but Firebase sync failed: ${syncResult.error}")
@@ -324,6 +346,11 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
         }
       }
     }
+  }
+
+  override fun onCleared() {
+    syncManager.stopRealtimeListeners()
+    super.onCleared()
   }
 
   fun createBranch(
@@ -790,12 +817,4 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
     }
   }
 
-  fun resetProductionSeedData() {
-    viewModelScope.launch(Dispatchers.IO) {
-      resetToProductionSeedData(database.driveSchoolDao())
-      withContext(Dispatchers.Main) {
-        showMessage("Production seed data successfully reloaded across all 5 branches!")
-      }
-    }
-  }
 }
