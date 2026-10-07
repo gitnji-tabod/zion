@@ -97,9 +97,9 @@ enum class VehicleStatus {
 @Entity(tableName = "users")
 data class UserEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val name: String,
-  val email: String,
-  val phone: String,
+  val name: String = "",
+  val email: String = "",
+  val phone: String = "",
   val countryCode: String = "CM", // "CM" = Cameroon (onsite-capable), others = Online-only
   val preferredLocale: String = "en", // "en" or "fr"
   val role: UserRole = UserRole.STUDENT,
@@ -112,10 +112,10 @@ data class UserEntity(
 @Entity(tableName = "branches")
 data class BranchEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val name: String,
-  val city: String,
-  val address: String,
-  val phone: String,
+  val name: String = "",
+  val city: String = "",
+  val address: String = "",
+  val phone: String = "",
   val isVirtual: Boolean = false,
   val managerId: String? = null
 )
@@ -123,21 +123,21 @@ data class BranchEntity(
 @Entity(tableName = "courses")
 data class CourseEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val title: String,
-  val titleFr: String,
-  val licenseCategory: LicenseCategory,
-  val delivery: DeliveryType,
-  val durationWeeks: Int,
-  val description: String,
-  val descriptionFr: String
+  val title: String = "",
+  val titleFr: String = "",
+  val licenseCategory: LicenseCategory = LicenseCategory.B,
+  val delivery: DeliveryType = DeliveryType.COMBINED,
+  val durationWeeks: Int = 0,
+  val description: String = "",
+  val descriptionFr: String = ""
 )
 
 @Entity(tableName = "fee_schedules")
 data class FeeScheduleEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val courseId: String,
-  val standardAmount: Double, // XAF
-  val platformFee: Double,    // XAF for online theory
+  val courseId: String = "",
+  val standardAmount: Double = 0.0,
+  val platformFee: Double = 0.0,
   val currency: String = "XAF",
   val effectiveFrom: String = "2026-01-01"
 )
@@ -145,10 +145,10 @@ data class FeeScheduleEntity(
 @Entity(tableName = "enrollments")
 data class EnrollmentEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val studentId: String,
-  val courseId: String,
-  val branchId: String,
-  val mode: EnrollmentMode,
+  val studentId: String = "",
+  val courseId: String = "",
+  val branchId: String = "",
+  val mode: EnrollmentMode = EnrollmentMode.ONLINE,
   val status: EnrollmentStatus = EnrollmentStatus.ONBOARDING,
   val negotiatedAmount: Double? = null,
   val negotiatedBy: String? = null, // Secretary ID
@@ -162,13 +162,13 @@ data class EnrollmentEntity(
 @Entity(tableName = "lessons")
 data class LessonEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val courseId: String,
-  val moduleTitle: String,
-  val moduleTitleFr: String,
-  val orderIndex: Int,
-  val title: String,
-  val titleFr: String,
-  val type: LessonType,
+  val courseId: String = "",
+  val moduleTitle: String = "",
+  val moduleTitleFr: String = "",
+  val orderIndex: Int = 0,
+  val title: String = "",
+  val titleFr: String = "",
+  val type: LessonType = LessonType.DOCUMENT,
   val isOnboarding: Boolean = false, // Accessible pre-payment
   val durationMinutes: Int = 15,
   val videoUrl: String = "",
@@ -180,8 +180,8 @@ data class LessonEntity(
 @Entity(tableName = "lesson_progress")
 data class LessonProgressEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val enrollmentId: String,
-  val lessonId: String,
+  val enrollmentId: String = "",
+  val lessonId: String = "",
   val status: ProgressStatus = ProgressStatus.NOT_STARTED,
   val score: Double? = null,
   val completedAt: Long? = null
@@ -190,11 +190,11 @@ data class LessonProgressEntity(
 @Entity(tableName = "payments")
 data class PaymentEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val enrollmentId: String,
-  val studentId: String,
-  val amount: Double,
-  val channel: PaymentChannel,
-  val reference: String,
+  val enrollmentId: String = "",
+  val studentId: String = "",
+  val amount: Double = 0.0,
+  val channel: PaymentChannel = PaymentChannel.CARD,
+  val reference: String = "",
   val collectedBy: String? = null, // Secretary ID if cash
   val status: PaymentStatus = PaymentStatus.CONFIRMED,
   val createdAt: Long = System.currentTimeMillis(),
@@ -204,11 +204,11 @@ data class PaymentEntity(
 @Entity(tableName = "practical_sessions")
 data class PracticalSessionEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val enrollmentId: String,
-  val studentId: String,
-  val instructorId: String,
-  val vehicleId: String,
-  val scheduledAt: Long,
+  val enrollmentId: String = "",
+  val studentId: String = "",
+  val instructorId: String = "",
+  val vehicleId: String = "",
+  val scheduledAt: Long = 0L,
   val durationMinutes: Int = 60,
   val attendance: AttendanceStatus = AttendanceStatus.SCHEDULED,
   val odometerStart: Int = 0,
@@ -219,31 +219,31 @@ data class PracticalSessionEntity(
 @Entity(tableName = "vehicles")
 data class VehicleEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val branchId: String,
-  val plateNo: String,
-  val makeModel: String,
-  val odometer: Int,
-  val nextServiceKm: Int,     // Expirable by distance
-  val nextServiceDate: Long,  // Expirable by date
+  val branchId: String = "",
+  val plateNo: String = "",
+  val makeModel: String = "",
+  val odometer: Int = 0,
+  val nextServiceKm: Int = 0,
+  val nextServiceDate: Long = 0L,
   val status: VehicleStatus = VehicleStatus.ACTIVE
 )
 
 @Entity(tableName = "exam_sessions")
 data class ExamSessionEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val sessionName: String,
-  val branchId: String,
-  val scheduledDate: Long,
-  val category: LicenseCategory,
+  val sessionName: String = "",
+  val branchId: String = "",
+  val scheduledDate: Long = 0L,
+  val category: LicenseCategory = LicenseCategory.B,
   val type: DeliveryType = DeliveryType.COMBINED
 )
 
 @Entity(tableName = "exam_candidates")
 data class ExamCandidateEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val examSessionId: String,
-  val enrollmentId: String,
-  val studentId: String,
+  val examSessionId: String = "",
+  val enrollmentId: String = "",
+  val studentId: String = "",
   val status: CandidateStatus = CandidateStatus.RECOMMENDED,
   val recommendedBy: String? = null, // Instructor ID
   val approvedBy: String? = null,    // Branch Manager ID
@@ -255,9 +255,9 @@ data class ExamCandidateEntity(
 @Entity(tableName = "certificates")
 data class CertificateEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val enrollmentId: String,
-  val studentId: String,
-  val studentName: String,
+  val enrollmentId: String = "",
+  val studentId: String = "",
+  val studentName: String = "",
   val verificationUuid: String = UUID.randomUUID().toString(),
   val type: CertificateType = CertificateType.FULL,
   val category: LicenseCategory = LicenseCategory.B,
@@ -269,40 +269,40 @@ data class CertificateEntity(
 @Entity(tableName = "insurance_policies")
 data class InsurancePolicyEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val holderId: String,
-  val holderName: String,
-  val tariffName: String,
-  val tariffNameFr: String,
-  val vehiclePlate: String,
+  val holderId: String = "",
+  val holderName: String = "",
+  val tariffName: String = "",
+  val tariffNameFr: String = "",
+  val vehiclePlate: String = "",
   val issuedBy: String? = null,
-  val startsAt: Long,
-  val expiresAt: Long, // Expirable
-  val premiumAmount: Double,
+  val startsAt: Long = 0L,
+  val expiresAt: Long = 0L, // Expirable
+  val premiumAmount: Double = 0.0,
   val status: String = "ACTIVE"
 )
 
 @Entity(tableName = "audit_logs")
 data class AuditLogEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val action: String,
-  val actorId: String,
-  val actorName: String,
-  val actorRole: String,
-  val details: String,
+  val action: String = "",
+  val actorId: String = "",
+  val actorName: String = "",
+  val actorRole: String = "",
+  val details: String = "",
   val timestamp: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "expiry_alerts")
 data class ExpiryAlertEntity(
   @PrimaryKey val id: String = UUID.randomUUID().toString(),
-  val expirableType: String, // "INSURANCE", "ENROLLMENT", "VEHICLE_SERVICE"
-  val expirableId: String,
-  val titleEn: String,
-  val titleFr: String,
-  val messageEn: String,
-  val messageFr: String,
-  val leadDays: Int, // 30, 7, 1
-  val expiryDate: Long,
+  val expirableType: String = "",
+  val expirableId: String = "",
+  val titleEn: String = "",
+  val titleFr: String = "",
+  val messageEn: String = "",
+  val messageFr: String = "",
+  val leadDays: Int = 0,
+  val expiryDate: Long = 0L,
   val channels: String = "IN_APP, SMS (+237), EMAIL",
   val notifiedAt: Long = System.currentTimeMillis(),
   val isRead: Boolean = false

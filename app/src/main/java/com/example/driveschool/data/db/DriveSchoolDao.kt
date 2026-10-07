@@ -91,6 +91,9 @@ interface DriveSchoolDao {
   @Query("SELECT * FROM lessons WHERE id = :lessonId LIMIT 1")
   suspend fun getLessonById(lessonId: String): LessonEntity?
 
+  @Query("SELECT * FROM lessons ORDER BY courseId ASC, orderIndex ASC")
+  fun getAllLessons(): Flow<List<LessonEntity>>
+
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertLessons(lessons: List<LessonEntity>)
 

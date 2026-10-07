@@ -396,6 +396,48 @@ class DriveSchoolSyncManager(
         syncedItems++
       }
 
+      // 9. Sync catalog, learning, examination, audit, and alert records.
+      val courses = dao.getAllCourses().firstOrNull() ?: emptyList()
+      for (course in courses) {
+        writeObjectDocument(firestore, "courses", course.id, course)
+        syncedItems++
+      }
+      val feeSchedules = dao.getAllFeeSchedules().firstOrNull() ?: emptyList()
+      for (schedule in feeSchedules) {
+        writeObjectDocument(firestore, "fee_schedules", schedule.id, schedule)
+        syncedItems++
+      }
+      val lessons = dao.getAllLessons().firstOrNull() ?: emptyList()
+      for (lesson in lessons) {
+        writeObjectDocument(firestore, "lessons", lesson.id, lesson)
+        syncedItems++
+      }
+      val progress = dao.getAllLessonProgress().firstOrNull() ?: emptyList()
+      for (item in progress) {
+        writeObjectDocument(firestore, "lesson_progress", item.id, item)
+        syncedItems++
+      }
+      val examSessions = dao.getAllExamSessions().firstOrNull() ?: emptyList()
+      for (session in examSessions) {
+        writeObjectDocument(firestore, "exam_sessions", session.id, session)
+        syncedItems++
+      }
+      val candidates = dao.getAllCandidates().firstOrNull() ?: emptyList()
+      for (candidate in candidates) {
+        writeObjectDocument(firestore, "exam_candidates", candidate.id, candidate)
+        syncedItems++
+      }
+      val auditLogs = dao.getAllAuditLogs().firstOrNull() ?: emptyList()
+      for (audit in auditLogs) {
+        writeObjectDocument(firestore, "audit_logs", audit.id, audit)
+        syncedItems++
+      }
+      val alerts = dao.getAllExpiryAlerts().firstOrNull() ?: emptyList()
+      for (alert in alerts) {
+        writeObjectDocument(firestore, "expiry_alerts", alert.id, alert)
+        syncedItems++
+      }
+
       _lastSyncTimestamp.value = System.currentTimeMillis()
       val success = SyncState.Success(syncedCount = syncedItems, message = "Successfully synced $syncedItems records to Cloud Firestore!")
       _syncState.value = success
