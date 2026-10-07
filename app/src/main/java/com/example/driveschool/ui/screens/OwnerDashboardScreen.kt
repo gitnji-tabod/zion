@@ -60,10 +60,27 @@ fun OwnerDashboardScreen(
     courseId: String?
   ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
   onAddStudentToBranch: (name: String, email: String, phone: String, branchId: String, courseId: String) -> Unit = { _, _, _, _, _ -> },
-  onSwitchUser: (UserEntity) -> Unit = {}
+  onSwitchUser: (UserEntity) -> Unit = {},
+  onOpenBranchManagement: () -> Unit = {},
+  onOpenStaffManagement: () -> Unit = {}
 ) {
   var showCreateBranchDialog by remember { mutableStateOf(false) }
   var branchForAddStudent by remember { mutableStateOf<BranchEntity?>(null) }
+  var branchSearchQuery by remember { mutableStateOf("") }
+
+  val filteredBranches = remember(branches, branchSearchQuery) {
+    val query = branchSearchQuery.trim()
+    if (query.isEmpty()) {
+      branches
+    } else {
+      branches.filter {
+        it.name.contains(query, ignoreCase = true) ||
+        it.city.contains(query, ignoreCase = true) ||
+        it.address.contains(query, ignoreCase = true)
+      }
+    }
+  }
+
   val totalRevenue = payments.filter { it.status == PaymentStatus.CONFIRMED }.sumOf { it.amount }
   val onlineEnrollments = enrollments.count { it.mode == EnrollmentMode.ONLINE }
   val onsiteEnrollments = enrollments.count { it.mode == EnrollmentMode.ONSITE }
@@ -165,6 +182,52 @@ fun OwnerDashboardScreen(
 
           Spacer(modifier = Modifier.height(8.dp))
 
+          // Branch Management Screen Button (Assign Staff & Firestore)
+          Button(
+            onClick = onOpenBranchManagement,
+            colors = ButtonDefaults.buttonColors(
+              containerColor = EmeraldSuccess,
+              contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("open_branch_management_screen_btn")
+          ) {
+            Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = if (currentLocale == "fr") "Gérer les Agences (Personnel & Firestore)" else "Manage Branches (Assign Staff & Firestore)",
+              fontWeight = FontWeight.Bold,
+              fontSize = 12.sp
+            )
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
+
+          // Staff Management Screen Button (Assign Roles & Firestore)
+          Button(
+            onClick = onOpenStaffManagement,
+            colors = ButtonDefaults.buttonColors(
+              containerColor = Color(0xFF7C3AED),
+              contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("open_staff_management_screen_btn")
+          ) {
+            Icon(Icons.Default.Badge, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = if (currentLocale == "fr") "Gérer le Personnel (Affecter Rôles & Firestore)" else "Manage Staff (Assign Roles & Firestore)",
+              fontWeight = FontWeight.Bold,
+              fontSize = 12.sp
+            )
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
+
           // Reload / Reset Production Seed Data Button
           OutlinedButton(
             onClick = onResetSeedData,
@@ -256,28 +319,107 @@ fun OwnerDashboardScreen(
           )
         }
 
-        FilledTonalButton(
-          onClick = { showCreateBranchDialog = true },
-          colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = AmberAccent,
-            contentColor = NavyDark
-          ),
-          shape = RoundedCornerShape(8.dp),
-          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-          modifier = Modifier.testTag("create_new_branch_button")
-        ) {
-          Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(16.dp))
-          Spacer(modifier = Modifier.width(4.dp))
-          Text(
-            text = if (currentLocale == "fr") "+ Nouvelle Agence" else "+ New Branch",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-          )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedButton(
+            onClick = onOpenBranchManagement,
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.testTag("manage_branches_header_btn")
+          ) {
+            Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(15.dp), tint = NavyPrimary)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+              text = if (currentLocale == "fr") "Gérer" else "Manage",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = NavyPrimary
+            )
+          }
+
+          FilledTonalButton(
+            onClick = { showCreateBranchDialog = true },
+            colors = ButtonDefaults.filledTonalButtonColors(
+              containerColor = AmberAccent,
+              contentColor = NavyDark
+            ),
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.testTag("create_new_branch_button")
+          ) {
+            Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+              text = if (currentLocale == "fr") "+ Nouvelle Agence" else "+ New Branch",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold
+            )
+          }
         }
       }
     }
 
-    items(branches) { branch ->
+    // Branch Search Bar
+    item {
+      OutlinedTextField(
+        value = branchSearchQuery,
+        onValueChange = { branchSearchQuery = it },
+        placeholder = {
+          Text(
+            if (currentLocale == "fr") "Rechercher une agence par nom, ville ou adresse..."
+            else "Search branches by name, city or location..."
+          )
+        },
+        leadingIcon = {
+          Icon(Icons.Default.Search, contentDescription = "Search", tint = NavyPrimary)
+        },
+        trailingIcon = {
+          if (branchSearchQuery.isNotEmpty()) {
+            IconButton(
+              onClick = { branchSearchQuery = "" },
+              modifier = Modifier.testTag("clear_dashboard_branch_search")
+            ) {
+              Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = Color.Gray)
+            }
+          }
+        },
+        shape = RoundedCornerShape(10.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+          focusedBorderColor = AmberAccent,
+          unfocusedBorderColor = Color(0xFFCBD5E1),
+          focusedContainerColor = MaterialTheme.colorScheme.surface,
+          unfocusedContainerColor = MaterialTheme.colorScheme.surface
+        ),
+        modifier = Modifier
+          .fillMaxWidth()
+          .testTag("dashboard_branch_search_input"),
+        singleLine = true
+      )
+    }
+
+    if (filteredBranches.isEmpty()) {
+      item {
+        Card(
+          shape = RoundedCornerShape(10.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+          modifier = Modifier.fillMaxWidth().testTag("empty_dashboard_branches_card")
+        ) {
+          Column(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+          ) {
+            Icon(Icons.Default.SearchOff, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(32.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              text = if (currentLocale == "fr") "Aucune agence trouvée pour '$branchSearchQuery'" else "No branches found matching '$branchSearchQuery'",
+              fontSize = 13.sp,
+              color = Color.Gray
+            )
+          }
+        }
+      }
+    }
+
+    items(filteredBranches) { branch ->
       val branchEnrollments = enrollments.filter { it.branchId == branch.id }
       val branchPayments = payments.filter { p ->
         branchEnrollments.any { it.id == p.enrollmentId }

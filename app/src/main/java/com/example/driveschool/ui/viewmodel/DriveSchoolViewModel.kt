@@ -9,6 +9,7 @@ import com.example.driveschool.data.db.resetToProductionSeedData
 import com.example.driveschool.data.model.*
 import com.example.driveschool.data.repository.DriveSchoolRepository
 import com.example.driveschool.data.sync.DriveSchoolSyncManager
+import com.example.driveschool.data.sync.FirestoreBranchDocument
 import com.example.driveschool.data.sync.SyncState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -59,6 +60,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
   val practicalSessions = repository.allPracticalSessions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
   val examSessions = repository.allExamSessions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
   val candidates = repository.allCandidates.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+  val allLessonProgress = repository.allLessonProgress.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
   val certificates = repository.allCertificates.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
   val insurancePolicies = repository.allInsurancePolicies.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
   val auditLogs = repository.allAuditLogs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -68,12 +70,34 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
   val candidatesPendingApproval = repository.candidatesPendingApproval.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
   val candidatesReadyForApplication = repository.candidatesReadyForApplication.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+  // Direct Firestore Branches Flow
+  private val _firestoreBranches = MutableStateFlow<List<FirestoreBranchDocument>>(emptyList())
+  val firestoreBranches: StateFlow<List<FirestoreBranchDocument>> = _firestoreBranches.asStateFlow()
+
+  private val _isFirestoreLoading = MutableStateFlow(false)
+  val isFirestoreLoading: StateFlow<Boolean> = _isFirestoreLoading.asStateFlow()
+
   init {
     // Ensure initial seed data is loaded if database was freshly created
     viewModelScope.launch(Dispatchers.IO) {
       val existingBranches = database.driveSchoolDao().getAllBranches().firstOrNull()
       if (existingBranches.isNullOrEmpty()) {
         populateInitialDatabase(database.driveSchoolDao())
+      }
+      refreshFirestoreBranches()
+    }
+  }
+
+  fun refreshFirestoreBranches() {
+    viewModelScope.launch(Dispatchers.IO) {
+      _isFirestoreLoading.value = true
+      try {
+        val list = syncManager.fetchBranchesFromFirestore()
+        _firestoreBranches.value = list
+      } catch (e: Exception) {
+        // Handled in sync manager
+      } finally {
+        _isFirestoreLoading.value = false
       }
     }
   }
@@ -164,6 +188,26 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
     showMessage("Signed out successfully.")
   }
 
+  fun updateProfile(userId: String, name: String, phone: String, locale: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val updated = repository.updateStudentProfile(userId, name, phone, locale)
+        syncManager.pushUser(updated)
+        withContext(Dispatchers.Main) {
+          _activeUserOverride.value = updated
+          if (locale != _currentLocale.value) {
+            _currentLocale.value = locale
+          }
+          showMessage(if (locale == "fr") "Profil mis à jour avec succès !" else "Profile updated successfully!")
+        }
+      } catch (e: Exception) {
+        withContext(Dispatchers.Main) {
+          showMessage("Error updating profile: ${e.message}")
+        }
+      }
+    }
+  }
+
   fun signUpStudent(
     name: String,
     email: String,
@@ -190,6 +234,9 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
         courseId = courseId,
         mode = mode
       )
+
+      // Persist student to Firestore 'users' collection immediately
+      syncManager.pushUser(newStudent)
 
       withContext(Dispatchers.Main) {
         _activeUserOverride.value = newStudent
@@ -237,6 +284,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
       )
       // Sync all tables to Firestore
       syncManager.syncAll()
+      refreshFirestoreBranches()
       withContext(Dispatchers.Main) {
         val studentMsg = if (!initialStudentName.isNullOrBlank()) " and Student $initialStudentName" else ""
         showMessage("New branch '${branch.name}' created with Manager $managerName, Secretary $secretaryName$studentMsg!")
@@ -257,6 +305,151 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
       syncManager.syncAll()
       withContext(Dispatchers.Main) {
         showMessage("Enrolled student $name at branch successfully!")
+      }
+    }
+  }
+
+  fun updateBranch(
+    branchId: String,
+    name: String,
+    city: String,
+    address: String,
+    phone: String,
+    isVirtual: Boolean,
+    managerUser: UserEntity?,
+    secretaryUser: UserEntity?,
+    newManagerDetails: Triple<String, String, String>? = null,
+    newSecretaryDetails: Triple<String, String, String>? = null
+  ) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val admin = currentUser.value
+      val (updatedBranch, resolvedManager, resolvedSecretary) = repository.updateBranchWithStaff(
+        branchId = branchId,
+        name = name,
+        city = city,
+        address = address,
+        phone = phone,
+        isVirtual = isVirtual,
+        managerUser = managerUser,
+        secretaryUser = secretaryUser,
+        newManagerDetails = newManagerDetails,
+        newSecretaryDetails = newSecretaryDetails,
+        actorUser = admin
+      )
+      // Push directly to Firestore
+      syncManager.pushBranch(updatedBranch, resolvedManager, resolvedSecretary)
+      refreshFirestoreBranches()
+      withContext(Dispatchers.Main) {
+        showMessage("Branch '${updatedBranch.name}' updated and persisted to Firestore!")
+      }
+    }
+  }
+
+  fun deleteBranch(branchId: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val admin = currentUser.value
+      repository.deleteBranch(branchId, admin)
+      syncManager.deleteBranchFromFirestore(branchId)
+      refreshFirestoreBranches()
+      withContext(Dispatchers.Main) {
+        showMessage("Branch deleted and removed from Firestore.")
+      }
+    }
+  }
+
+  fun persistBranchToFirestore(branch: BranchEntity) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val userList = users.value
+      val manager = userList.find { it.branchId == branch.id && it.role == UserRole.BRANCH_MANAGER }
+      val secretary = userList.find { it.branchId == branch.id && it.role == UserRole.SECRETARY }
+      val success = syncManager.pushBranch(branch, manager, secretary)
+      refreshFirestoreBranches()
+      withContext(Dispatchers.Main) {
+        if (success) {
+          showMessage("Branch '${branch.name}' synced directly to Firestore!")
+        } else {
+          showMessage("Branch saved in local cache (queued for Firestore).")
+        }
+      }
+    }
+  }
+
+  // Super Admin: Staff Management (Manager, Instructor, Secretary)
+  fun createStaffMember(
+    name: String,
+    email: String,
+    phone: String,
+    role: UserRole,
+    branchId: String?,
+    countryCode: String = "CM",
+    preferredLocale: String = "en"
+  ) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val admin = currentUser.value
+      val newStaff = repository.createStaffMember(
+        name = name,
+        email = email,
+        phone = phone,
+        role = role,
+        branchId = branchId,
+        countryCode = countryCode,
+        preferredLocale = preferredLocale,
+        actorUser = admin
+      )
+      // Push to Firestore immediately
+      syncManager.pushUser(newStaff)
+      withContext(Dispatchers.Main) {
+        val roleLabel = when (role) {
+          UserRole.BRANCH_MANAGER -> "Branch Manager"
+          UserRole.INSTRUCTOR -> "Instructor"
+          UserRole.SECRETARY -> "Secretary"
+          else -> role.name
+        }
+        showMessage("Staff member '${newStaff.name}' ($roleLabel) created & saved to Firestore!")
+      }
+    }
+  }
+
+  fun updateStaffMember(
+    userId: String,
+    name: String,
+    email: String,
+    phone: String,
+    role: UserRole,
+    branchId: String?
+  ) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val admin = currentUser.value
+      val updated = repository.updateStaffMember(
+        userId = userId,
+        name = name,
+        email = email,
+        phone = phone,
+        role = role,
+        branchId = branchId,
+        actorUser = admin
+      )
+      // Push to Firestore immediately
+      syncManager.pushUser(updated)
+      withContext(Dispatchers.Main) {
+        val roleLabel = when (role) {
+          UserRole.BRANCH_MANAGER -> "Branch Manager"
+          UserRole.INSTRUCTOR -> "Instructor"
+          UserRole.SECRETARY -> "Secretary"
+          else -> role.name
+        }
+        showMessage("Staff member '${updated.name}' updated to $roleLabel & saved to Firestore!")
+      }
+    }
+  }
+
+  fun deleteStaffMember(userId: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val admin = currentUser.value
+      repository.deleteStaffMember(userId, admin)
+      syncManager.deleteUserFromFirestore(userId)
+      withContext(Dispatchers.Main) {
+        showMessage("Staff member deleted and removed from Firestore.")
       }
     }
   }
@@ -443,6 +636,7 @@ class DriveSchoolViewModel(application: Application) : AndroidViewModel(applicat
   fun triggerCloudSync() {
     viewModelScope.launch {
       val result = syncManager.syncAll()
+      refreshFirestoreBranches()
       withContext(Dispatchers.Main) {
         when (result) {
           is SyncState.Success -> showMessage(result.message)

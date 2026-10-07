@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User account and profile entity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "countryCode": { "type": "string" },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "BRANCH_MANAGER", "SECRETARY", "INSTRUCTOR", "STUDENT"] },
+        "branchId": { "type": "string" },
+        "preferredLocale": { "type": "string" },
+        "syncedAt": { "type": "integer" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "Branch": {
+      "title": "Branch",
+      "description": "Physical or virtual driving school branch entity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "city": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "isVirtual": { "type": "boolean" },
+        "managerId": { "type": "string" },
+        "managerName": { "type": "string" },
+        "managerEmail": { "type": "string" },
+        "managerPhone": { "type": "string" },
+        "secretaryId": { "type": "string" },
+        "secretaryName": { "type": "string" },
+        "secretaryEmail": { "type": "string" },
+        "secretaryPhone": { "type": "string" },
+        "syncedAt": { "type": "integer" }
+      },
+      "required": ["id", "name", "city"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Registered users and operational staff"
+    },
+    "/branches/{branchId}": {
+      "schema": { "$ref": "#/entities/Branch" },
+      "description": "Driving school branches managed by Super Admin"
+    }
+  }
+}

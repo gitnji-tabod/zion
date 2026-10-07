@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.driveschool.data.model.UserEntity
 import com.example.driveschool.data.model.UserRole
 import com.example.driveschool.ui.util.Localization
 import com.example.ui.theme.AmberAccent
@@ -26,16 +27,15 @@ import com.example.ui.theme.NavyPrimary
 @Composable
 fun AppTopBar(
   currentRole: UserRole,
+  currentUser: UserEntity? = null,
   currentLocale: String,
   unreadAlertsCount: Int,
-  onRoleSelected: (UserRole) -> Unit,
   onToggleLocale: () -> Unit,
   onAlertsClick: () -> Unit,
   onVerifyClick: () -> Unit,
+  onProfileClick: () -> Unit = {},
   onSignOut: () -> Unit = {}
 ) {
-  var roleMenuExpanded by remember { mutableStateOf(false) }
-
   Surface(
     color = NavyPrimary,
     tonalElevation = 6.dp,
@@ -66,7 +66,7 @@ fun AppTopBar(
           ) {
             Icon(
               imageVector = Icons.Default.DirectionsCar,
-              contentDescription = "DriveSchool Logo",
+              contentDescription = "ZION digital Logo",
               tint = NavyDark,
               modifier = Modifier.size(24.dp)
             )
@@ -74,7 +74,7 @@ fun AppTopBar(
           Spacer(modifier = Modifier.width(10.dp))
           Column {
             Text(
-              text = "DriveSchool",
+              text = "ZION digital",
               style = MaterialTheme.typography.titleMedium.copy(
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -91,7 +91,7 @@ fun AppTopBar(
           }
         }
 
-        // Actions: QR Verify, Alert Bell, Language Toggle
+        // Actions: QR Verify, Alert Bell, Language Toggle, Sign Out
         Row(verticalAlignment = Alignment.CenterVertically) {
           // Public verify shortcut
           IconButton(
@@ -147,6 +147,23 @@ fun AppTopBar(
             )
           }
 
+          Spacer(modifier = Modifier.width(4.dp))
+
+          // Profile Shortcut Button
+          IconButton(
+            onClick = onProfileClick,
+            modifier = Modifier.size(34.dp).testTag("top_bar_profile_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.AccountCircle,
+              contentDescription = "User Profile",
+              tint = AmberAccent,
+              modifier = Modifier.size(22.dp)
+            )
+          }
+
+          Spacer(modifier = Modifier.width(4.dp))
+
           // Sign Out Button
           IconButton(
             onClick = onSignOut,
@@ -156,7 +173,7 @@ fun AppTopBar(
               imageVector = Icons.Default.Logout,
               contentDescription = "Sign Out",
               tint = Color(0xFFFCA5A5),
-              modifier = Modifier.size(18.dp)
+              modifier = Modifier.size(20.dp)
             )
           }
         }
@@ -164,80 +181,51 @@ fun AppTopBar(
 
       Spacer(modifier = Modifier.height(8.dp))
 
-      // Role selector bar
+      // Authenticated User Identity Bar (Replaces Persona Switcher)
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(
-            text = if (currentLocale == "fr") "Rôle Actif :" else "Active Persona:",
-            style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF94A3B8), fontSize = 12.sp)
-          )
-          Spacer(modifier = Modifier.width(6.dp))
-          Box {
-            FilterChip(
-              selected = true,
-              onClick = { roleMenuExpanded = true },
-              label = {
-                Text(
-                  text = Localization.roleName(currentRole.name, currentLocale),
-                  fontWeight = FontWeight.SemiBold,
-                  fontSize = 12.sp
-                )
-              },
-              trailingIcon = {
-                Icon(
-                  imageVector = Icons.Default.ArrowDropDown,
-                  contentDescription = "Change Role",
-                  modifier = Modifier.size(18.dp)
-                )
-              },
-              colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = AmberAccent,
-                selectedLabelColor = NavyDark,
-                selectedTrailingIconColor = NavyDark
-              ),
-              modifier = Modifier.testTag("role_selector_chip")
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.testTag("authenticated_user_identity_bar")
+        ) {
+          Box(
+            modifier = Modifier
+              .size(24.dp)
+              .clip(CircleShape)
+              .background(AmberAccent.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.Person,
+              contentDescription = null,
+              tint = AmberAccent,
+              modifier = Modifier.size(16.dp)
             )
-
-            DropdownMenu(
-              expanded = roleMenuExpanded,
-              onDismissRequest = { roleMenuExpanded = false }
-            ) {
-              UserRole.values().forEach { role ->
-                DropdownMenuItem(
-                  text = {
-                    Column {
-                      Text(
-                        text = Localization.roleName(role.name, currentLocale),
-                        fontWeight = if (role == currentRole) FontWeight.Bold else FontWeight.Normal
-                      )
-                      Text(
-                        text = when (role) {
-                          UserRole.SUPER_ADMIN -> if (currentLocale == "fr") "Direction générale & audits" else "Owner & org-wide oversight"
-                          UserRole.BRANCH_MANAGER -> if (currentLocale == "fr") "Validation remises & examens" else "Branch KPIs & approvals"
-                          UserRole.SECRETARY -> if (currentLocale == "fr") "Inscriptions & encaissements" else "Walk-in & cash collections"
-                          UserRole.INSTRUCTOR -> if (currentLocale == "fr") "Séances & pointage kilométrique" else "Classes & practical sessions"
-                          UserRole.STUDENT -> if (currentLocale == "fr") "Apprentissage & passage d'examen" else "Student learning & driving"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                      )
-                    }
-                  },
-                  onClick = {
-                    onRoleSelected(role)
-                    roleMenuExpanded = false
-                  }
-                )
-              }
-            }
+          }
+          Spacer(modifier = Modifier.width(8.dp))
+          Column {
+            Text(
+              text = currentUser?.name ?: "Authenticated User",
+              style = MaterialTheme.typography.bodySmall.copy(
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                fontSize = 12.sp
+              )
+            )
+            Text(
+              text = "${Localization.roleName(currentRole.name, currentLocale)}${if (currentUser?.email?.isNotBlank() == true) " • ${currentUser.email}" else ""}",
+              style = MaterialTheme.typography.labelSmall.copy(
+                color = Color(0xFF94A3B8),
+                fontSize = 10.sp
+              )
+            )
           }
         }
 
-        // Live Mode Badge
+        // Region / Live Status Badge
         Surface(
           shape = CircleShape,
           color = Color(0xFF10B981).copy(alpha = 0.2f),

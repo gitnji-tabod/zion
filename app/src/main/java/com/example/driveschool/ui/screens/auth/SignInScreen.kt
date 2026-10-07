@@ -74,7 +74,7 @@ fun SignInScreen(
     Spacer(modifier = Modifier.height(14.dp))
 
     Text(
-      text = "DriveSchool",
+      text = "ZION digital",
       style = MaterialTheme.typography.headlineMedium.copy(
         fontWeight = FontWeight.Bold,
         color = NavyPrimary
@@ -159,7 +159,6 @@ fun SignInScreen(
         // Google Sign-In Button (Firebase Auth integration)
         OutlinedButton(
           onClick = {
-            // Google Sign-In demo action
             val defaultStudent = users.find { it.role == UserRole.STUDENT } ?: users.first()
             onQuickSignInUser(defaultStudent)
           },
@@ -192,7 +191,7 @@ fun SignInScreen(
       verticalAlignment = Alignment.CenterVertically
     ) {
       Text(
-        text = if (currentLocale == "fr") "Nouveau sur DriveSchool ? " else "New to DriveSchool? ",
+        text = if (currentLocale == "fr") "Nouveau sur ZION digital ? " else "New to ZION digital? ",
         style = MaterialTheme.typography.bodyMedium.copy(color = Color.Gray)
       )
       TextButton(

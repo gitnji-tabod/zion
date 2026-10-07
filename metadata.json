@@ -1,6 +1,6 @@
 {
-  "name": "DriveSchool",
-  "description": "DriveSchool Platform: Hybrid Online and Onsite Driving School Management, LMS, Exams, and Insurance",
+  "name": "ZION digital",
+  "description": "ZION digital: Hybrid Online and Onsite Driving School Management, LMS, Exams, and Insurance",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

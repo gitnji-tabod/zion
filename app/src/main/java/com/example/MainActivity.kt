@@ -64,6 +64,7 @@ fun DriveSchoolApp(
   val practicalSessions by viewModel.practicalSessions.collectAsStateWithLifecycle()
   val examSessions by viewModel.examSessions.collectAsStateWithLifecycle()
   val candidates by viewModel.candidates.collectAsStateWithLifecycle()
+  val allLessonProgress by viewModel.allLessonProgress.collectAsStateWithLifecycle()
   val certificates by viewModel.certificates.collectAsStateWithLifecycle()
   val insurancePolicies by viewModel.insurancePolicies.collectAsStateWithLifecycle()
   val auditLogs by viewModel.auditLogs.collectAsStateWithLifecycle()
@@ -73,10 +74,13 @@ fun DriveSchoolApp(
   val candidatesPendingApproval by viewModel.candidatesPendingApproval.collectAsStateWithLifecycle()
   val candidatesReadyForApplication by viewModel.candidatesReadyForApplication.collectAsStateWithLifecycle()
   val authScreen by viewModel.authScreen.collectAsStateWithLifecycle()
+  val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+  val isFirestoreLoading by viewModel.isFirestoreLoading.collectAsStateWithLifecycle()
 
   val snackbarHostState = remember { SnackbarHostState() }
   var paymentModalEnrollment by remember { mutableStateOf<EnrollmentEntity?>(null) }
   var showVerifyScreen by remember { mutableStateOf(false) }
+  var showProfileScreen by remember { mutableStateOf(false) }
 
   // Authentication Screens (Sign In & Sign Up)
   if (authScreen == "SIGN_IN") {
@@ -111,32 +115,35 @@ fun DriveSchoolApp(
   }
 
   // Handle hardware back button
-  BackHandler(enabled = selectedLesson != null || showVerifyScreen || selectedCertificate != null) {
+  BackHandler(enabled = selectedLesson != null || showVerifyScreen || showProfileScreen || selectedCertificate != null || currentTab == "BRANCHES" || currentTab == "STAFF") {
     when {
       selectedLesson != null -> viewModel.selectLesson(null)
       showVerifyScreen -> showVerifyScreen = false
+      showProfileScreen -> showProfileScreen = false
       selectedCertificate != null -> viewModel.selectCertificate(null)
+      currentTab == "BRANCHES" || currentTab == "STAFF" -> viewModel.selectTab("DASHBOARD")
     }
   }
 
   Scaffold(
     snackbarHost = { SnackbarHost(snackbarHostState) },
     topBar = {
-      if (selectedLesson == null && !showVerifyScreen) {
+      if (selectedLesson == null && !showVerifyScreen && !showProfileScreen && currentTab != "BRANCHES" && currentTab != "STAFF") {
         AppTopBar(
           currentRole = currentRole,
+          currentUser = currentUser,
           currentLocale = currentLocale,
           unreadAlertsCount = unreadAlertsCount,
-          onRoleSelected = { viewModel.switchRole(it) },
           onToggleLocale = { viewModel.toggleLocale() },
           onAlertsClick = { viewModel.selectTab("ALERTS") },
           onVerifyClick = { showVerifyScreen = true },
+          onProfileClick = { showProfileScreen = true },
           onSignOut = { viewModel.signOut() }
         )
       }
     },
     bottomBar = {
-      if (selectedLesson == null && !showVerifyScreen) {
+      if (selectedLesson == null && !showVerifyScreen && !showProfileScreen) {
         NavigationBar(
           containerColor = NavyDark,
           contentColor = Color.White,
@@ -188,6 +195,39 @@ fun DriveSchoolApp(
             )
           )
 
+          // For Super Admin: Tab 2 is Branches
+          if (currentRole == UserRole.SUPER_ADMIN) {
+            NavigationBarItem(
+              selected = currentTab == "BRANCHES",
+              onClick = { viewModel.selectTab("BRANCHES") },
+              icon = { Icon(Icons.Default.Storefront, contentDescription = "Branches") },
+              label = { Text(if (currentLocale == "fr") "Agences" else "Branches", fontSize = 11.sp) },
+              colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = NavyDark,
+                selectedTextColor = AmberAccent,
+                indicatorColor = AmberAccent,
+                unselectedIconColor = Color.LightGray,
+                unselectedTextColor = Color.LightGray
+              ),
+              modifier = Modifier.testTag("nav_item_branches")
+            )
+
+            NavigationBarItem(
+              selected = currentTab == "STAFF",
+              onClick = { viewModel.selectTab("STAFF") },
+              icon = { Icon(Icons.Default.Badge, contentDescription = "Staff") },
+              label = { Text(if (currentLocale == "fr") "Personnel" else "Staff", fontSize = 11.sp) },
+              colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = NavyDark,
+                selectedTextColor = AmberAccent,
+                indicatorColor = AmberAccent,
+                unselectedIconColor = Color.LightGray,
+                unselectedTextColor = Color.LightGray
+              ),
+              modifier = Modifier.testTag("nav_item_staff")
+            )
+          }
+
           // Common Tab 2: Expiry Alerts & Pipeline
           NavigationBarItem(
             selected = currentTab == "ALERTS",
@@ -213,20 +253,22 @@ fun DriveSchoolApp(
             )
           )
 
-          // Common Tab 3: Verification
-          NavigationBarItem(
-            selected = showVerifyScreen || currentTab == "VERIFY",
-            onClick = { showVerifyScreen = true },
-            icon = { Icon(Icons.Default.QrCodeScanner, contentDescription = null) },
-            label = { Text(if (currentLocale == "fr") "Vérification" else "Verify", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-              selectedIconColor = NavyDark,
-              selectedTextColor = AmberAccent,
-              indicatorColor = AmberAccent,
-              unselectedIconColor = Color.LightGray,
-              unselectedTextColor = Color.LightGray
+          // Common Tab 3: Verification (for non-Super Admin)
+          if (currentRole != UserRole.SUPER_ADMIN) {
+            NavigationBarItem(
+              selected = showVerifyScreen || currentTab == "VERIFY",
+              onClick = { showVerifyScreen = true },
+              icon = { Icon(Icons.Default.QrCodeScanner, contentDescription = null) },
+              label = { Text(if (currentLocale == "fr") "Vérification" else "Verify", fontSize = 11.sp) },
+              colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = NavyDark,
+                selectedTextColor = AmberAccent,
+                indicatorColor = AmberAccent,
+                unselectedIconColor = Color.LightGray,
+                unselectedTextColor = Color.LightGray
+              )
             )
-          )
+          }
 
           // Common Tab 4: Audit Logs
           NavigationBarItem(
@@ -268,6 +310,29 @@ fun DriveSchoolApp(
           )
         }
 
+        // User Profile Screen
+        showProfileScreen -> {
+          UserProfileScreen(
+            currentLocale = currentLocale,
+            currentUser = currentUser,
+            branches = branches,
+            courses = courses,
+            enrollments = enrollments,
+            payments = payments,
+            onBack = { showProfileScreen = false },
+            onUpdateProfile = { uId, name, phone, loc ->
+              viewModel.updateProfile(uId, name, phone, loc)
+            },
+            onOpenPaymentGateway = { enr ->
+              paymentModalEnrollment = enr
+            },
+            onSignOut = {
+              showProfileScreen = false
+              viewModel.signOut()
+            }
+          )
+        }
+
         // Public Certificate Verification Screen
         showVerifyScreen || selectedCertificate != null -> {
           PublicVerifyScreen(
@@ -283,6 +348,52 @@ fun DriveSchoolApp(
         }
 
         // Tab Views
+        currentTab == "BRANCHES" -> {
+          BranchManagementScreen(
+            currentLocale = currentLocale,
+            branches = branches,
+            users = users,
+            enrollments = enrollments,
+            payments = payments,
+            syncState = syncState,
+            onBack = { viewModel.selectTab("DASHBOARD") },
+            onCloudSync = { viewModel.triggerCloudSync() },
+            onCreateBranch = { name, city, addr, phone, mName, mEmail, mPhone, sName, sEmail, sPhone, stName, stEmail, stPhone, cId ->
+              viewModel.createBranch(name, city, addr, phone, mName, mEmail, mPhone, sName, sEmail, sPhone, stName, stEmail, stPhone, cId)
+            },
+            onUpdateBranch = { branchId, name, city, addr, phone, isVirtual, mUser, sUser, newM, newS ->
+              viewModel.updateBranch(branchId, name, city, addr, phone, isVirtual, mUser, sUser, newM, newS)
+            },
+            onDeleteBranch = { branchId -> viewModel.deleteBranch(branchId) },
+            onPersistBranchToFirestore = { branch -> viewModel.persistBranchToFirestore(branch) },
+            onRefreshFirestore = { viewModel.refreshFirestoreBranches() },
+            isFirestoreLoading = isFirestoreLoading
+          )
+        }
+
+        currentTab == "STAFF" -> {
+          StaffManagementScreen(
+            currentLocale = currentLocale,
+            users = users,
+            branches = branches,
+            syncState = syncState,
+            onBack = { viewModel.selectTab("DASHBOARD") },
+            onCloudSync = { viewModel.triggerCloudSync() },
+            onCreateStaff = { name, email, phone, role, branchId, country, locale ->
+              viewModel.createStaffMember(name, email, phone, role, branchId, country, locale)
+            },
+            onUpdateStaff = { userId, name, email, phone, role, branchId ->
+              viewModel.updateStaffMember(userId, name, email, phone, role, branchId)
+            },
+            onDeleteStaff = { userId ->
+              viewModel.deleteStaffMember(userId)
+            },
+            onSwitchUser = { user ->
+              viewModel.quickSignInUser(user)
+            }
+          )
+        }
+
         currentTab == "ALERTS" -> {
           AlertsCenterScreen(
             currentLocale = currentLocale,
@@ -322,7 +433,9 @@ fun DriveSchoolApp(
             onAddStudentToBranch = { name, email, phone, branchId, courseId ->
               viewModel.addStudentToBranch(name, email, phone, branchId, courseId)
             },
-            onSwitchUser = { user -> viewModel.quickSignInUser(user) }
+            onSwitchUser = { user -> viewModel.quickSignInUser(user) },
+            onOpenBranchManagement = { viewModel.selectTab("BRANCHES") },
+            onOpenStaffManagement = { viewModel.selectTab("STAFF") }
           )
         }
 
@@ -391,13 +504,14 @@ fun DriveSchoolApp(
             enrollments = enrollments,
             courses = courses,
             lessons = activeLessons,
+            lessonProgressList = allLessonProgress,
             vehicles = vehicles,
             practicalSessions = practicalSessions,
+            examSessions = examSessions,
             certificates = certificates,
             candidates = candidates,
             onSelectStudentUser = { student: UserEntity ->
-              // Switch between onsite or online student
-              viewModel.switchRole(UserRole.STUDENT)
+              viewModel.quickSignInUser(student)
             },
             onLessonClick = { lesson, isAccessible ->
               if (isAccessible) {
@@ -415,7 +529,8 @@ fun DriveSchoolApp(
             },
             onViewCertificate = { cert ->
               viewModel.selectCertificate(cert)
-            }
+            },
+            onOpenProfile = { showProfileScreen = true }
           )
         }
       }

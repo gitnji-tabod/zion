@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "DriveSchool"
+rootProject.name = "ZION digital"
 
 include(":app")

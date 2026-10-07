@@ -20,6 +20,9 @@ interface DriveSchoolDao {
   @Update
   suspend fun updateUser(user: UserEntity)
 
+  @Query("DELETE FROM users WHERE id = :userId")
+  suspend fun deleteUserById(userId: String)
+
   // Branches
   @Query("SELECT * FROM branches ORDER BY isVirtual ASC, name ASC")
   fun getAllBranches(): Flow<List<BranchEntity>>
@@ -29,6 +32,12 @@ interface DriveSchoolDao {
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertBranch(branch: BranchEntity)
+
+  @Update
+  suspend fun updateBranch(branch: BranchEntity)
+
+  @Query("DELETE FROM branches WHERE id = :branchId")
+  suspend fun deleteBranchById(branchId: String)
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertBranches(branches: List<BranchEntity>)
@@ -86,6 +95,9 @@ interface DriveSchoolDao {
   suspend fun insertLessons(lessons: List<LessonEntity>)
 
   // Lesson Progress
+  @Query("SELECT * FROM lesson_progress")
+  fun getAllLessonProgress(): Flow<List<LessonProgressEntity>>
+
   @Query("SELECT * FROM lesson_progress WHERE enrollmentId = :enrollmentId")
   fun getProgressForEnrollment(enrollmentId: String): Flow<List<LessonProgressEntity>>
 

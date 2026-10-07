@@ -2,6 +2,7 @@ package com.example.driveschool.data.sync
 
 import android.content.Context
 import android.util.Log
+import com.example.R
 import com.example.driveschool.data.db.DriveSchoolDao
 import com.example.driveschool.data.model.*
 import com.google.firebase.FirebaseApp
@@ -23,6 +24,24 @@ sealed class SyncState {
   data class Error(val error: String) : SyncState()
 }
 
+data class FirestoreBranchDocument(
+  val id: String = "",
+  val name: String = "",
+  val city: String = "",
+  val address: String = "",
+  val phone: String = "",
+  val isVirtual: Boolean = false,
+  val managerId: String = "",
+  val managerName: String = "",
+  val managerEmail: String = "",
+  val managerPhone: String = "",
+  val secretaryId: String = "",
+  val secretaryName: String = "",
+  val secretaryEmail: String = "",
+  val secretaryPhone: String = "",
+  val syncedAt: Long = 0L
+)
+
 class DriveSchoolSyncManager(
   private val context: Context,
   private val dao: DriveSchoolDao
@@ -39,7 +58,8 @@ class DriveSchoolSyncManager(
   private fun getFirestore(): FirebaseFirestore? {
     return try {
       if (FirebaseApp.getApps(context).isNotEmpty()) {
-        FirebaseFirestore.getInstance()
+        val dbId = context.getString(R.string.firestore_database_id)
+        FirebaseFirestore.getInstance(dbId)
       } else {
         null
       }
@@ -68,9 +88,12 @@ class DriveSchoolSyncManager(
     try {
       var syncedItems = 0
 
-      // 1. Sync Branches
+      // 1. Sync Branches with assigned staff details
       val branches = dao.getAllBranches().firstOrNull() ?: emptyList()
+      val users = dao.getAllUsers().firstOrNull() ?: emptyList()
       for (b in branches) {
+        val manager = users.find { it.branchId == b.id && it.role == UserRole.BRANCH_MANAGER }
+        val secretary = users.find { it.branchId == b.id && it.role == UserRole.SECRETARY }
         val data = mapOf(
           "id" to b.id,
           "name" to b.name,
@@ -78,7 +101,14 @@ class DriveSchoolSyncManager(
           "address" to b.address,
           "phone" to b.phone,
           "isVirtual" to b.isVirtual,
-          "managerId" to b.managerId,
+          "managerId" to (manager?.id ?: b.managerId ?: ""),
+          "managerName" to (manager?.name ?: ""),
+          "managerEmail" to (manager?.email ?: ""),
+          "managerPhone" to (manager?.phone ?: ""),
+          "secretaryId" to (secretary?.id ?: ""),
+          "secretaryName" to (secretary?.name ?: ""),
+          "secretaryEmail" to (secretary?.email ?: ""),
+          "secretaryPhone" to (secretary?.phone ?: ""),
           "syncedAt" to System.currentTimeMillis()
         )
         firestore.collection("branches").document(b.id).set(data, SetOptions.merge()).await()
@@ -86,7 +116,6 @@ class DriveSchoolSyncManager(
       }
 
       // 2. Sync Users
-      val users = dao.getAllUsers().firstOrNull() ?: emptyList()
       for (u in users) {
         val data = mapOf(
           "id" to u.id,
@@ -263,6 +292,129 @@ class DriveSchoolSyncManager(
   }
 
   /**
+   * Push a single Branch record and associated staff to Firestore immediately upon save/update.
+   */
+  suspend fun pushBranch(
+    branch: BranchEntity,
+    manager: UserEntity? = null,
+    secretary: UserEntity? = null
+  ): Boolean = withContext(Dispatchers.IO) {
+    val firestore = getFirestore()
+    if (firestore == null) {
+      Log.d(TAG, "Local-First mode: branch ${branch.id} stored in Room, queued for Firestore.")
+      return@withContext false
+    }
+    try {
+      val branchData = mapOf(
+        "id" to branch.id,
+        "name" to branch.name,
+        "city" to branch.city,
+        "address" to branch.address,
+        "phone" to branch.phone,
+        "isVirtual" to branch.isVirtual,
+        "managerId" to (manager?.id ?: branch.managerId ?: ""),
+        "managerName" to (manager?.name ?: ""),
+        "managerEmail" to (manager?.email ?: ""),
+        "managerPhone" to (manager?.phone ?: ""),
+        "secretaryId" to (secretary?.id ?: ""),
+        "secretaryName" to (secretary?.name ?: ""),
+        "secretaryEmail" to (secretary?.email ?: ""),
+        "secretaryPhone" to (secretary?.phone ?: ""),
+        "syncedAt" to System.currentTimeMillis()
+      )
+      firestore.collection("branches").document(branch.id).set(branchData, SetOptions.merge()).await()
+
+      // Also persist manager & secretary to users collection if provided
+      manager?.let { m ->
+        val mgrData = mapOf(
+          "id" to m.id,
+          "name" to m.name,
+          "email" to m.email,
+          "phone" to m.phone,
+          "countryCode" to m.countryCode,
+          "role" to m.role.name,
+          "branchId" to branch.id,
+          "preferredLocale" to m.preferredLocale,
+          "syncedAt" to System.currentTimeMillis()
+        )
+        firestore.collection("users").document(m.id).set(mgrData, SetOptions.merge()).await()
+      }
+
+      secretary?.let { s ->
+        val secData = mapOf(
+          "id" to s.id,
+          "name" to s.name,
+          "email" to s.email,
+          "phone" to s.phone,
+          "countryCode" to s.countryCode,
+          "role" to s.role.name,
+          "branchId" to branch.id,
+          "preferredLocale" to s.preferredLocale,
+          "syncedAt" to System.currentTimeMillis()
+        )
+        firestore.collection("users").document(s.id).set(secData, SetOptions.merge()).await()
+      }
+
+      _lastSyncTimestamp.value = System.currentTimeMillis()
+      _syncState.value = SyncState.Success(1, "Branch '${branch.name}' persisted to Firestore.")
+      true
+    } catch (e: Exception) {
+      Log.e(TAG, "Error persisting branch ${branch.id} to Firestore: ${e.message}", e)
+      _syncState.value = SyncState.Error("Firestore push error: ${e.message}")
+      false
+    }
+  }
+
+  /**
+   * Delete a branch document from Firestore.
+   */
+  suspend fun deleteBranchFromFirestore(branchId: String) = withContext(Dispatchers.IO) {
+    val firestore = getFirestore() ?: return@withContext
+    try {
+      firestore.collection("branches").document(branchId).delete().await()
+    } catch (e: Exception) {
+      Log.w(TAG, "Error deleting branch from Firestore: ${e.message}")
+    }
+  }
+
+  /**
+   * Push a staff member or user entity to Firestore collection 'users' immediately.
+   */
+  suspend fun pushUser(user: UserEntity): Boolean = withContext(Dispatchers.IO) {
+    val firestore = getFirestore() ?: return@withContext false
+    try {
+      val data = mapOf(
+        "id" to user.id,
+        "name" to user.name,
+        "email" to user.email,
+        "phone" to user.phone,
+        "countryCode" to user.countryCode,
+        "role" to user.role.name,
+        "branchId" to (user.branchId ?: ""),
+        "preferredLocale" to user.preferredLocale,
+        "syncedAt" to System.currentTimeMillis()
+      )
+      firestore.collection("users").document(user.id).set(data, SetOptions.merge()).await()
+      true
+    } catch (e: Exception) {
+      Log.w(TAG, "Error pushing user ${user.id} to Firestore: ${e.message}")
+      false
+    }
+  }
+
+  /**
+   * Delete a user document from Firestore collection 'users'.
+   */
+  suspend fun deleteUserFromFirestore(userId: String) = withContext(Dispatchers.IO) {
+    val firestore = getFirestore() ?: return@withContext
+    try {
+      firestore.collection("users").document(userId).delete().await()
+    } catch (e: Exception) {
+      Log.w(TAG, "Error deleting user from Firestore: ${e.message}")
+    }
+  }
+
+  /**
    * Push a newly generated certificate to Firestore public verification collection (BR-07).
    */
   suspend fun pushCertificate(cert: CertificateEntity) = withContext(Dispatchers.IO) {
@@ -285,6 +437,100 @@ class DriveSchoolSyncManager(
     } catch (e: Exception) {
       Log.w(TAG, "Failed to push certificate ${cert.verificationUuid} to Firestore: ${e.message}")
     }
+  }
+
+  /**
+   * Fetch all branch documents directly from Firestore 'branches' collection.
+   * If Firestore is offline or empty, seeds and falls back smoothly to local Room cache.
+   */
+  suspend fun fetchBranchesFromFirestore(): List<FirestoreBranchDocument> = withContext(Dispatchers.IO) {
+    val firestore = getFirestore()
+    if (firestore == null) {
+      Log.d(TAG, "Firestore not connected: serving branches from Room cache")
+      val branches = dao.getAllBranches().firstOrNull() ?: emptyList()
+      val users = dao.getAllUsers().firstOrNull() ?: emptyList()
+      return@withContext branches.map { b ->
+        val m = users.find { it.branchId == b.id && it.role == UserRole.BRANCH_MANAGER }
+        val s = users.find { it.branchId == b.id && it.role == UserRole.SECRETARY }
+        FirestoreBranchDocument(
+          id = b.id,
+          name = b.name,
+          city = b.city,
+          address = b.address,
+          phone = b.phone,
+          isVirtual = b.isVirtual,
+          managerId = m?.id ?: b.managerId ?: "",
+          managerName = m?.name ?: "",
+          managerEmail = m?.email ?: "",
+          managerPhone = m?.phone ?: "",
+          secretaryId = s?.id ?: "",
+          secretaryName = s?.name ?: "",
+          secretaryEmail = s?.email ?: "",
+          secretaryPhone = s?.phone ?: "",
+          syncedAt = System.currentTimeMillis()
+        )
+      }
+    }
+    try {
+      val snapshot = firestore.collection("branches").get().await()
+      if (snapshot.isEmpty) {
+        val branches = dao.getAllBranches().firstOrNull() ?: emptyList()
+        val users = dao.getAllUsers().firstOrNull() ?: emptyList()
+        for (b in branches) {
+          val m = users.find { it.branchId == b.id && it.role == UserRole.BRANCH_MANAGER }
+          val s = users.find { it.branchId == b.id && it.role == UserRole.SECRETARY }
+          pushBranch(b, m, s)
+        }
+        val reSnapshot = firestore.collection("branches").get().await()
+        return@withContext reSnapshot.documents.map { doc -> parseFirestoreBranch(doc) }
+      }
+      snapshot.documents.map { doc -> parseFirestoreBranch(doc) }
+    } catch (e: Exception) {
+      Log.w(TAG, "Error fetching branches from Firestore: ${e.message}")
+      val branches = dao.getAllBranches().firstOrNull() ?: emptyList()
+      val users = dao.getAllUsers().firstOrNull() ?: emptyList()
+      branches.map { b ->
+        val m = users.find { it.branchId == b.id && it.role == UserRole.BRANCH_MANAGER }
+        val s = users.find { it.branchId == b.id && it.role == UserRole.SECRETARY }
+        FirestoreBranchDocument(
+          id = b.id,
+          name = b.name,
+          city = b.city,
+          address = b.address,
+          phone = b.phone,
+          isVirtual = b.isVirtual,
+          managerId = m?.id ?: b.managerId ?: "",
+          managerName = m?.name ?: "",
+          managerEmail = m?.email ?: "",
+          managerPhone = m?.phone ?: "",
+          secretaryId = s?.id ?: "",
+          secretaryName = s?.name ?: "",
+          secretaryEmail = s?.email ?: "",
+          secretaryPhone = s?.phone ?: "",
+          syncedAt = System.currentTimeMillis()
+        )
+      }
+    }
+  }
+
+  private fun parseFirestoreBranch(doc: com.google.firebase.firestore.DocumentSnapshot): FirestoreBranchDocument {
+    return FirestoreBranchDocument(
+      id = doc.getString("id") ?: doc.id,
+      name = doc.getString("name") ?: "",
+      city = doc.getString("city") ?: "",
+      address = doc.getString("address") ?: "",
+      phone = doc.getString("phone") ?: "",
+      isVirtual = doc.getBoolean("isVirtual") ?: false,
+      managerId = doc.getString("managerId") ?: "",
+      managerName = doc.getString("managerName") ?: "",
+      managerEmail = doc.getString("managerEmail") ?: "",
+      managerPhone = doc.getString("managerPhone") ?: "",
+      secretaryId = doc.getString("secretaryId") ?: "",
+      secretaryName = doc.getString("secretaryName") ?: "",
+      secretaryEmail = doc.getString("secretaryEmail") ?: "",
+      secretaryPhone = doc.getString("secretaryPhone") ?: "",
+      syncedAt = doc.getLong("syncedAt") ?: System.currentTimeMillis()
+    )
   }
 
   companion object {

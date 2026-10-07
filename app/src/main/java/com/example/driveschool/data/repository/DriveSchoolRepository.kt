@@ -18,6 +18,7 @@ class DriveSchoolRepository(private val dao: DriveSchoolDao) {
   val allPracticalSessions: Flow<List<PracticalSessionEntity>> = dao.getAllPracticalSessions()
   val allExamSessions: Flow<List<ExamSessionEntity>> = dao.getAllExamSessions()
   val allCandidates: Flow<List<ExamCandidateEntity>> = dao.getAllCandidates()
+  val allLessonProgress: Flow<List<LessonProgressEntity>> = dao.getAllLessonProgress()
   val allCertificates: Flow<List<CertificateEntity>> = dao.getAllCertificates()
   val allInsurancePolicies: Flow<List<InsurancePolicyEntity>> = dao.getAllInsurancePolicies()
   val allAuditLogs: Flow<List<AuditLogEntity>> = dao.getAllAuditLogs()
@@ -177,6 +178,244 @@ class DriveSchoolRepository(private val dao: DriveSchoolDao) {
     )
 
     return newBranch
+  }
+
+  // Super Admin: Update existing branch coordinates and assign manager and secretary
+  suspend fun updateBranchWithStaff(
+    branchId: String,
+    name: String,
+    city: String,
+    address: String,
+    phone: String,
+    isVirtual: Boolean,
+    managerUser: UserEntity?,
+    secretaryUser: UserEntity?,
+    newManagerDetails: Triple<String, String, String>? = null,
+    newSecretaryDetails: Triple<String, String, String>? = null,
+    actorUser: UserEntity? = null
+  ): Triple<BranchEntity, UserEntity?, UserEntity?> {
+    val existingBranch = dao.getBranchById(branchId)
+
+    // Resolve Manager
+    var resolvedManager: UserEntity? = managerUser
+    if (newManagerDetails != null && newManagerDetails.first.isNotBlank()) {
+      val mId = "user-mgr-${UUID.randomUUID().toString().take(6)}"
+      val newMgr = UserEntity(
+        id = mId,
+        name = newManagerDetails.first,
+        email = newManagerDetails.second,
+        phone = newManagerDetails.third.ifBlank { "+237 670 000 111" },
+        countryCode = "CM",
+        preferredLocale = "en",
+        role = UserRole.BRANCH_MANAGER,
+        branchId = branchId
+      )
+      dao.insertUser(newMgr)
+      resolvedManager = newMgr
+    } else if (resolvedManager != null) {
+      val updatedMgr = resolvedManager.copy(branchId = branchId, role = UserRole.BRANCH_MANAGER)
+      dao.insertUser(updatedMgr)
+      resolvedManager = updatedMgr
+    }
+
+    // Resolve Secretary
+    var resolvedSecretary: UserEntity? = secretaryUser
+    if (newSecretaryDetails != null && newSecretaryDetails.first.isNotBlank()) {
+      val sId = "user-sec-${UUID.randomUUID().toString().take(6)}"
+      val newSec = UserEntity(
+        id = sId,
+        name = newSecretaryDetails.first,
+        email = newSecretaryDetails.second,
+        phone = newSecretaryDetails.third.ifBlank { "+237 670 000 222" },
+        countryCode = "CM",
+        preferredLocale = "en",
+        role = UserRole.SECRETARY,
+        branchId = branchId
+      )
+      dao.insertUser(newSec)
+      resolvedSecretary = newSec
+    } else if (resolvedSecretary != null) {
+      val updatedSec = resolvedSecretary.copy(branchId = branchId, role = UserRole.SECRETARY)
+      dao.insertUser(updatedSec)
+      resolvedSecretary = updatedSec
+    }
+
+    val updatedBranch = BranchEntity(
+      id = branchId,
+      name = name,
+      city = city,
+      address = address,
+      phone = phone,
+      isVirtual = isVirtual,
+      managerId = resolvedManager?.id ?: existingBranch?.managerId
+    )
+    dao.insertBranch(updatedBranch)
+
+    dao.insertAuditLog(
+      AuditLogEntity(
+        action = "BRANCH_UPDATED",
+        actorId = actorUser?.id ?: "admin-01",
+        actorName = actorUser?.name ?: "Super Admin (Owner)",
+        actorRole = "SUPER_ADMIN",
+        details = "Updated branch '$name' ($city). Assigned Manager: ${resolvedManager?.name ?: "Unassigned"}, Secretary: ${resolvedSecretary?.name ?: "Unassigned"}."
+      )
+    )
+
+    return Triple(updatedBranch, resolvedManager, resolvedSecretary)
+  }
+
+  suspend fun deleteBranch(branchId: String, actorUser: UserEntity? = null) {
+    val branch = dao.getBranchById(branchId)
+    dao.deleteBranchById(branchId)
+    dao.insertAuditLog(
+      AuditLogEntity(
+        action = "BRANCH_DELETED",
+        actorId = actorUser?.id ?: "admin-01",
+        actorName = actorUser?.name ?: "Super Admin",
+        actorRole = "SUPER_ADMIN",
+        details = "Deleted branch '${branch?.name ?: branchId}' ($branchId)."
+      )
+    )
+  }
+
+  // Super Admin: Create Staff Member (Manager, Instructor, Secretary)
+  suspend fun createStaffMember(
+    name: String,
+    email: String,
+    phone: String,
+    role: UserRole,
+    branchId: String?,
+    countryCode: String = "CM",
+    preferredLocale: String = "en",
+    actorUser: UserEntity? = null
+  ): UserEntity {
+    val prefix = when (role) {
+      UserRole.BRANCH_MANAGER -> "user-mgr"
+      UserRole.INSTRUCTOR -> "user-inst"
+      UserRole.SECRETARY -> "user-sec"
+      else -> "user-staff"
+    }
+    val staffId = "$prefix-${UUID.randomUUID().toString().take(6)}"
+    val newStaff = UserEntity(
+      id = staffId,
+      name = name,
+      email = email,
+      phone = phone.ifBlank { "+237 670 000 000" },
+      countryCode = countryCode,
+      preferredLocale = preferredLocale,
+      role = role,
+      branchId = branchId
+    )
+    dao.insertUser(newStaff)
+
+    // If assigned as manager to a branch, link to branch managerId
+    if (role == UserRole.BRANCH_MANAGER && !branchId.isNullOrBlank()) {
+      val branch = dao.getBranchById(branchId)
+      if (branch != null) {
+        dao.updateBranch(branch.copy(managerId = staffId))
+      }
+    }
+
+    dao.insertAuditLog(
+      AuditLogEntity(
+        action = "STAFF_CREATED",
+        actorId = actorUser?.id ?: "admin-01",
+        actorName = actorUser?.name ?: "Super Admin",
+        actorRole = "SUPER_ADMIN",
+        details = "Created staff member '$name' with role ${role.name} assigned to branch ${branchId ?: "None"}."
+      )
+    )
+
+    return newStaff
+  }
+
+  // Super Admin: Update Staff Member and Role
+  suspend fun updateStaffMember(
+    userId: String,
+    name: String,
+    email: String,
+    phone: String,
+    role: UserRole,
+    branchId: String?,
+    actorUser: UserEntity? = null
+  ): UserEntity {
+    val existing = dao.getUserById(userId) ?: UserEntity(
+      id = userId,
+      name = name,
+      email = email,
+      phone = phone,
+      role = role,
+      branchId = branchId
+    )
+    val updated = existing.copy(
+      name = name,
+      email = email,
+      phone = phone,
+      role = role,
+      branchId = branchId
+    )
+    dao.updateUser(updated)
+
+    // If manager, update branch's managerId
+    if (role == UserRole.BRANCH_MANAGER && !branchId.isNullOrBlank()) {
+      val branch = dao.getBranchById(branchId)
+      if (branch != null) {
+        dao.updateBranch(branch.copy(managerId = userId))
+      }
+    }
+
+    dao.insertAuditLog(
+      AuditLogEntity(
+        action = "STAFF_UPDATED",
+        actorId = actorUser?.id ?: "admin-01",
+        actorName = actorUser?.name ?: "Super Admin",
+        actorRole = "SUPER_ADMIN",
+        details = "Updated staff member '$name' (${updated.id}) to role ${role.name}, branch: ${branchId ?: "Unassigned"}."
+      )
+    )
+
+    return updated
+  }
+
+  // Super Admin: Delete Staff Member
+  suspend fun deleteStaffMember(userId: String, actorUser: UserEntity? = null) {
+    val user = dao.getUserById(userId)
+    dao.deleteUserById(userId)
+    dao.insertAuditLog(
+      AuditLogEntity(
+        action = "STAFF_DELETED",
+        actorId = actorUser?.id ?: "admin-01",
+        actorName = actorUser?.name ?: "Super Admin",
+        actorRole = "SUPER_ADMIN",
+        details = "Deleted staff member '${user?.name ?: userId}' (${user?.role?.name ?: "STAFF"})."
+      )
+    )
+  }
+
+  // User Profile: Update contact details & preferred language
+  suspend fun updateStudentProfile(
+    userId: String,
+    name: String,
+    phone: String,
+    preferredLocale: String
+  ): UserEntity {
+    val existing = dao.getUserById(userId) ?: throw IllegalArgumentException("User not found: $userId")
+    val updated = existing.copy(
+      name = name,
+      phone = phone,
+      preferredLocale = preferredLocale
+    )
+    dao.updateUser(updated)
+    dao.insertAuditLog(
+      AuditLogEntity(
+        action = "PROFILE_UPDATED",
+        actorId = userId,
+        actorName = name,
+        actorRole = existing.role.name,
+        details = "User updated profile contact info: phone=$phone, locale=$preferredLocale."
+      )
+    )
+    return updated
   }
 
   // Add a student directly to a branch with active enrollment

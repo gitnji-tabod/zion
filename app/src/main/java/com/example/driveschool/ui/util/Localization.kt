@@ -59,6 +59,16 @@ object Localization {
     }
   }
 
+  fun attendanceStatusName(status: String, locale: String): String {
+    return when (status) {
+      "SCHEDULED" -> if (locale == "fr") "Programmé" else "Scheduled"
+      "PRESENT" -> if (locale == "fr") "Effectué" else "Completed"
+      "ABSENT" -> if (locale == "fr") "Absent" else "Absent"
+      "LATE" -> if (locale == "fr") "En retard" else "Late"
+      else -> status
+    }
+  }
+
   fun paymentChannelName(channel: String, locale: String): String {
     return when (channel) {
       "MTN_MOMO" -> "MTN Mobile Money"
